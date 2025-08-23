@@ -37,11 +37,8 @@ COPY ./.env /root/.env
 COPY ./scripts/wait-for-it.sh /wait-for-it.sh
 RUN chmod +x /wait-for-it.sh
 
-# Copy the credentials folder
-COPY ./credentials /root/credentials
-
 # Expose the necessary port
-EXPOSE 8015
+EXPOSE 8017
 
 # Set the entrypoint to wait for MariaDB to be ready before starting the application
 CMD ["/wait-for-it.sh", "colortime_db:27017", "--", "./api"] 
