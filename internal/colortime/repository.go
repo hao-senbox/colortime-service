@@ -11,7 +11,8 @@ import (
 
 type ColorTimeRepository interface {
 	CreateColorTime(ctx context.Context, colortime *ColorTime) error
-	GetColorTimes(ctx context.Context, userID string, startDate, endDate, start, end time.Time) ([]*ColorTime, error)
+	GetColorTimes(ctx context.Context, userID, organizationID string, startDate, endDate, start, end time.Time) ([]*ColorTime, error)
+	CountColorTimesTracking(ctx context.Context, userID, organizationID, tracking string, startDate time.Time) (int64, error)
 	GetColorTime(ctx context.Context, id primitive.ObjectID) (*ColorTime, error)
 	UpdateColorTime(ctx context.Context, colortime *ColorTime) error
 	DeleteColorTime(ctx context.Context, id primitive.ObjectID) error
@@ -32,10 +33,11 @@ func (r *colorTimeRepository) CreateColorTime(ctx context.Context, colortime *Co
 	return err
 }
 
-func (r *colorTimeRepository) GetColorTimes(ctx context.Context, userID string, startDate, endDate, start, end time.Time) ([]*ColorTime, error) {
+func (r *colorTimeRepository) GetColorTimes(ctx context.Context, userID, organizationID string, startDate, endDate, start, end time.Time) ([]*ColorTime, error) {
 
 	filter := bson.M{
-		"user_id": userID,
+		"user_id":         userID,
+		"organization_id": organizationID,
 	}
 
 	if start.Before(end) {
@@ -52,10 +54,10 @@ func (r *colorTimeRepository) GetColorTimes(ctx context.Context, userID string, 
 			{"date": bson.M{"$gte": startDate, "$lte": endDate}},
 			{"$or": []bson.M{
 				{
-					"time": bson.M{"$gte": start}, 
+					"time": bson.M{"$gte": start},
 				},
 				{
-					"time": bson.M{"$lte": end}, 
+					"time": bson.M{"$lte": end},
 				},
 			}},
 		}
@@ -83,6 +85,26 @@ func (r *colorTimeRepository) GetColorTime(ctx context.Context, id primitive.Obj
 	}
 
 	return &colortime, nil
+
+}
+
+func (r *colorTimeRepository) CountColorTimesTracking(ctx context.Context, userID, organizationID, tracking string, startDate time.Time) (int64, error) {
+
+	filter := bson.M{
+		"user_id":         userID,
+		"organization_id": organizationID,
+		"tracking":        tracking,
+		"date": bson.M{
+			"$lt": startDate,
+		},
+	}
+
+	count, err := r.ColorTimeCollection.CountDocuments(ctx, filter)
+	if err != nil {
+		return 0, err
+	}
+
+	return count, nil
 
 }
 

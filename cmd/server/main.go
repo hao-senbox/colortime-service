@@ -3,6 +3,7 @@ package main
 import (
 	"colortime-service/config"
 	"colortime-service/internal/colortime"
+	"colortime-service/internal/language"
 	"colortime-service/internal/product"
 	"colortime-service/pkg/consul"
 	"colortime-service/pkg/zap"
@@ -50,15 +51,16 @@ func main() {
 
 	defer func() {
 		if err := mongoClient.Disconnect(context.Background()); err != nil {
-			logger.Fatal(err)
+			logger.Fatal(err)	
 		}
 	}()
 
-	productService := product.NewUserService(consulClient)	
+	productService := product.NewUserService(consulClient)
+	languageService := language.NewLanguageService(consulClient)	
 	colorTimeCollection := mongoClient.Database(cfg.MongoDB).Collection("colortime")
 
 	colorTimeRepository := colortime.NewColorTimeRepository(colorTimeCollection)
-	colorTimeService := colortime.NewColorTimeService(colorTimeRepository, productService)
+	colorTimeService := colortime.NewColorTimeService(colorTimeRepository, productService, languageService)
 	colorTimeHandler := colortime.NewColorTimeHandler(colorTimeService)
 	router := gin.Default()
 

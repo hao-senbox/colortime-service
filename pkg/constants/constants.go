@@ -106,6 +106,8 @@ const (
 	MaximumUsageTime = "maximum_usage_time"
 
 	UserID = "user_id"
+	ColortimeNoteKey   = "note"
+	ColortimeTitleKey  = "title"
 )
 
 type contextKey string

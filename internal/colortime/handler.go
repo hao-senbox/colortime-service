@@ -52,6 +52,7 @@ func (h *ColorTimeHandler) GetColorTimes(c *gin.Context) {
 	userID := c.Query("user_id")
 	baseDate := c.Query("base_date")
 	timeRange := c.Query("time_range")
+	organizationID := c.Query("organization_id")
 
 	if userID == "" || baseDate == "" || timeRange == "" {
 		helper.SendError(c, http.StatusBadRequest, errors.New("invalid request parameters"), nil)
@@ -66,7 +67,7 @@ func (h *ColorTimeHandler) GetColorTimes(c *gin.Context) {
 
 	ctx := context.WithValue(c, constants.TokenKey, tokenString)
 
-	colorTimes, err := h.ColorTimeService.GetColorTimes(ctx, userID, baseDate, timeRange)
+	colorTimes, err := h.ColorTimeService.GetColorTimes(ctx, userID, organizationID, baseDate, timeRange)
 	if err != nil {
 		helper.SendError(c, http.StatusInternalServerError, errors.New("failed to get color times"), nil)
 		return

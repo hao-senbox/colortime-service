@@ -1,6 +1,7 @@
 package colortime
 
 import (
+	"colortime-service/internal/language"
 	"colortime-service/internal/product"
 	"context"
 	"errors"
@@ -13,7 +14,7 @@ import (
 
 type ColorTimeService interface {
 	CreateColorTime(ctx context.Context, req CreateColorTimeRequest) error
-	GetColorTimes(ctx context.Context, userID string, baseDate string, timeRange string) ([]*ColorTimeResponse, error)
+	GetColorTimes(ctx context.Context, userID, organizationID string, baseDate string, timeRange string) ([]*ColorTimeResponse, error)
 	GetColorTime(ctx context.Context, id string) (*ColorTimeResponse, error)
 	UpdateColorTime(ctx context.Context, req UpdateColorTimeRequest, id string) error
 	DeleteColorTime(ctx context.Context, id string) error
@@ -22,12 +23,14 @@ type ColorTimeService interface {
 type colorTimeService struct {
 	ColorTimeRepository ColorTimeRepository
 	ProductService      product.ProductService
+	LanguageService     language.MessageLanguageGateway
 }
 
-func NewColorTimeService(colorTimeRepository ColorTimeRepository, productService product.ProductService) ColorTimeService {
+func NewColorTimeService(colorTimeRepository ColorTimeRepository, productService product.ProductService, languageService language.MessageLanguageGateway) ColorTimeService {
 	return &colorTimeService{
 		ColorTimeRepository: colorTimeRepository,
 		ProductService:      productService,
+		LanguageService:     languageService,
 	}
 }
 
@@ -85,23 +88,66 @@ func (s *colorTimeService) CreateColorTime(ctx context.Context, req CreateColorT
 		return errors.New("note is required")
 	}
 
+	if req.OrganizationID == "" {
+		return errors.New("organization id is required")
+	}
+
+	var useCount int
+
+	count, err := s.ColorTimeRepository.CountColorTimesTracking(ctx, req.UserID, req.OrganizationID, req.Tracking, dateParese)
+	if err != nil {
+		return err
+	}
+
+	if count > 0 {
+		useCount = int(count) + 1
+	} else {
+		useCount = 1
+	}
+
 	colorTime := &ColorTime{
-		ID:        primitive.NewObjectID(),
-		UserID:    req.UserID,
-		Title:     req.Title,
-		Date:      dateParese,
-		Time:      timeOnly,
-		Duration:  req.Duration,
-		Color:     req.Color,
-		Note:      req.Note,
-		ProductID: objProductID,
+		ID:             primitive.NewObjectID(),
+		OrganizationID: req.OrganizationID,
+		UserID:         req.UserID,
+		Tracking:       req.Tracking,
+		UseCount:       useCount,
+		Title:          req.Title,
+		Date:           dateParese,
+		Time:           timeOnly,
+		Duration:       req.Duration,
+		Color:          req.Color,
+		Note:           req.Note,
+		ProductID:      objProductID,
+		CreatedAt:      time.Now(),
+		UpdatedAt:      time.Now(),
+	}
+
+	updateReq := UpdateColorTimeRequest{
+		Tracking:       req.Tracking,
+		UseCount:       req.UseCount,
+		OrganizationID: req.OrganizationID,
+		Title:          req.Title,
+		Date:           req.Date,
+		Time:           req.Time,
+		Duration:       req.Duration,
+		Color:          req.Color,
+		Note:           req.Note,
+		ProductID:      req.ProductID,
+		LanguageID:     req.LanguageID,
+	}
+
+	languageReq := BuildColortimeMessagesUpdate(colorTime.ID.Hex(), updateReq)
+
+	err = s.LanguageService.UploadMessages(ctx, languageReq)
+	if err != nil {
+		return err
 	}
 
 	return s.ColorTimeRepository.CreateColorTime(ctx, colorTime)
 
 }
 
-func (s *colorTimeService) GetColorTimes(ctx context.Context, userID string, baseDate string, timeRange string) ([]*ColorTimeResponse, error) {
+func (s *colorTimeService) GetColorTimes(ctx context.Context, userID, organizationID string, baseDate string, timeRange string) ([]*ColorTimeResponse, error) {
 
 	var colortimesData []*ColorTimeResponse
 
@@ -129,7 +175,7 @@ func (s *colorTimeService) GetColorTimes(ctx context.Context, userID string, bas
 		return nil, err
 	}
 
-	colortimes, err := s.ColorTimeRepository.GetColorTimes(ctx, userID, startDate, endDate, start, end)
+	colortimes, err := s.ColorTimeRepository.GetColorTimes(ctx, userID, organizationID, startDate, endDate, start, end)
 	if err != nil {
 		return nil, err
 	}
@@ -141,8 +187,13 @@ func (s *colorTimeService) GetColorTimes(ctx context.Context, userID string, bas
 			log.Println(err)
 		}
 
+		languages, err := s.LanguageService.GetMessageLanguages(ctx, colortime.ID.Hex())
+		if err != nil {
+			log.Println(err)
+		}
+
 		var productRes *product.Product
-		if productData != nil { 
+		if productData != nil {
 			productRes = &product.Product{
 				ID:                   productData.ID,
 				ProductName:          productData.ProductName,
@@ -153,19 +204,20 @@ func (s *colorTimeService) GetColorTimes(ctx context.Context, userID string, bas
 				TopicName:            productData.TopicName,
 			}
 		} else {
-			productRes = nil 
+			productRes = nil
 		}
 
 		colorTimeData := &ColorTimeResponse{
-			ID:       colortime.ID,
-			UserID:   colortime.UserID,
-			Title:    colortime.Title,
-			Date:     colortime.Date,
-			Time:     colortime.Time,
-			Duration: colortime.Duration,
-			Color:    colortime.Color,
-			Note:     colortime.Note,
-			Product:  productRes,
+			ID:               colortime.ID,
+			UserID:           colortime.UserID,
+			Title:            colortime.Title,
+			Date:             colortime.Date,
+			Time:             colortime.Time,
+			Duration:         colortime.Duration,
+			MessageLanguages: languages,
+			Color:            colortime.Color,
+			Note:             colortime.Note,
+			Product:          productRes,
 		}
 
 		colortimesData = append(colortimesData, colorTimeData)
@@ -196,15 +248,21 @@ func (s *colorTimeService) GetColorTime(ctx context.Context, id string) (*ColorT
 		log.Println(err)
 	}
 
+	languages, err := s.LanguageService.GetMessageLanguages(ctx, colortime.ID.Hex())
+	if err != nil {
+		log.Println(err)
+	}
+
 	colorTimeData := &ColorTimeResponse{
-		ID:       colortime.ID,
-		UserID:   colortime.UserID,
-		Title:    colortime.Title,
-		Date:     colortime.Date,
-		Time:     colortime.Time,
-		Duration: colortime.Duration,
-		Color:    colortime.Color,
-		Note:     colortime.Note,
+		ID:               colortime.ID,
+		UserID:           colortime.UserID,
+		Title:            colortime.Title,
+		Date:             colortime.Date,
+		Time:             colortime.Time,
+		Duration:         colortime.Duration,
+		MessageLanguages: languages,
+		Color:            colortime.Color,
+		Note:             colortime.Note,
 		Product: &product.Product{
 			ID:                   productData.ID,
 			ProductName:          productData.ProductName,
@@ -269,6 +327,10 @@ func (s *colorTimeService) UpdateColorTime(ctx context.Context, req UpdateColorT
 		req.Color = colorTime.Color
 	}
 
+	if req.OrganizationID == "" {
+		req.OrganizationID = colorTime.OrganizationID
+	}
+
 	if req.ProductID == "" {
 		productID = colorTime.ProductID
 	} else {
@@ -283,6 +345,10 @@ func (s *colorTimeService) UpdateColorTime(ctx context.Context, req UpdateColorT
 		req.Note = colorTime.Note
 	}
 
+	if req.Tracking == "" {
+		req.Tracking = colorTime.Tracking
+	}
+
 	timeParse, err := time.Parse("15:04", req.Time)
 	if err != nil {
 		return errors.New("invalid time format")
@@ -293,17 +359,40 @@ func (s *colorTimeService) UpdateColorTime(ctx context.Context, req UpdateColorT
 		0, time.UTC,
 	)
 
+	var useCount int
+
+	count, err := s.ColorTimeRepository.CountColorTimesTracking(ctx, colorTime.UserID, req.OrganizationID, req.Tracking, date)
+	if err != nil {
+		return err
+	}
+
+	if count > 0 {
+		useCount = int(count) + 1
+	} else {
+		useCount = 1
+	}
+
 	data := &ColorTime{
-		ID:        colorTime.ID,
-		UserID:    colorTime.UserID,
-		Title:     req.Title,
-		Date:      date,
-		Time:      timeOnly,
-		Duration:  req.Duration,
-		Color:     req.Color,
-		ProductID: productID,
-		Note:      req.Note,
-		UpdatedAt: time.Now(),
+		ID:             colorTime.ID,
+		OrganizationID: req.OrganizationID,
+		UserID:         colorTime.UserID,
+		Tracking:       req.Tracking,
+		UseCount:       useCount,
+		Title:          req.Title,
+		Date:           date,
+		Time:           timeOnly,
+		Duration:       req.Duration,
+		Color:          req.Color,
+		ProductID:      productID,
+		Note:           req.Note,
+		UpdatedAt:      time.Now(),
+	}
+
+	languageReq := BuildColortimeMessagesUpdate(colorTime.ID.Hex(), req)
+
+	err = s.LanguageService.UploadMessages(ctx, languageReq)
+	if err != nil {
+		return err
 	}
 
 	return s.ColorTimeRepository.UpdateColorTime(ctx, data)
