@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/hashicorp/consul/api"
 	"go.mongodb.org/mongo-driver/bson/primitive"
@@ -42,10 +43,19 @@ func NewServiceAPI(client *api.Client, serviceName string) *callAPI {
 		return nil
 	}
 
-	service, err := sd.DiscoverService()
-	if err != nil {
-		fmt.Printf("Error discovering service: %v\n", err)
-		return nil
+	var service *api.CatalogService
+
+	for i := 0; i < 10; i++ {
+		service, err = sd.DiscoverService()
+		if err == nil && service != nil {
+			break
+		}
+		fmt.Printf("Waiting for service %s... retry %d/10\n", serviceName, i+1)
+		time.Sleep(3 * time.Second)
+	}
+
+	if service == nil {
+		fmt.Printf("Service %s not found after retries, continuing anyway...\n", serviceName)
 	}
 
 	if os.Getenv("LOCAL_TEST") == "true" {
@@ -61,56 +71,56 @@ func NewServiceAPI(client *api.Client, serviceName string) *callAPI {
 
 func (s *productService) GetProductInfor(productID string) (*Product, error) {
 
-    productRes, err := s.client.getProductInfor(productID)
-    if err != nil {
-        return nil, err
-    }
+	productRes, err := s.client.getProductInfor(productID)
+	if err != nil {
+		return nil, err
+	}
 
-    rawData, ok := productRes["data"]
-    if !ok || rawData == nil {
-        return nil, fmt.Errorf("product not found for id=%s", productID)
-    }
+	rawData, ok := productRes["data"]
+	if !ok || rawData == nil {
+		return nil, fmt.Errorf("product not found for id=%s", productID)
+	}
 
-    product, ok := rawData.(map[string]interface{})
-    if !ok {
-        return nil, fmt.Errorf("invalid product format for id=%s", productID)
-    }
-	
-    name, _ := product["product_name"].(string)
-    id, _ := product["id"].(string)
+	product, ok := rawData.(map[string]interface{})
+	if !ok {
+		return nil, fmt.Errorf("invalid product format for id=%s", productID)
+	}
 
-    objIDProduct, err := primitive.ObjectIDFromHex(id)
-    if err != nil {
-        return nil, fmt.Errorf("invalid product ID format: %v", err)
-    }
+	name, _ := product["product_name"].(string)
+	id, _ := product["id"].(string)
 
-    priceStore, _ := product["original_price_store"].(float64)
-    priceService, _ := product["original_price_service"].(float64)
+	objIDProduct, err := primitive.ObjectIDFromHex(id)
+	if err != nil {
+		return nil, fmt.Errorf("invalid product ID format: %v", err)
+	}
 
-    var imageURL string
-    if v, ok := product["cover_image"].(string); ok {
-        imageURL = v
-    }
+	priceStore, _ := product["original_price_store"].(float64)
+	priceService, _ := product["original_price_service"].(float64)
 
-    var topic string
-    if rawTopic, ok := product["topic"].(map[string]interface{}); ok {
-        topic, _ = rawTopic["topic_name"].(string)
-    }
+	var imageURL string
+	if v, ok := product["cover_image"].(string); ok {
+		imageURL = v
+	}
 
-    var category string
-    if rawCategory, ok := product["category"].(map[string]interface{}); ok {
-        category, _ = rawCategory["category_name"].(string)
-    }
+	var topic string
+	if rawTopic, ok := product["topic"].(map[string]interface{}); ok {
+		topic, _ = rawTopic["topic_name"].(string)
+	}
 
-    return &Product{
-        ID:                   objIDProduct,
-        ProductName:          name,
-        OriginalPriceStore:   priceStore,
-        OriginalPriceService: priceService,
-        ProductImage:         imageURL,
-        TopicName:            topic,
-        CategoryName:         category,
-    }, nil
+	var category string
+	if rawCategory, ok := product["category"].(map[string]interface{}); ok {
+		category, _ = rawCategory["category_name"].(string)
+	}
+
+	return &Product{
+		ID:                   objIDProduct,
+		ProductName:          name,
+		OriginalPriceStore:   priceStore,
+		OriginalPriceService: priceService,
+		ProductImage:         imageURL,
+		TopicName:            topic,
+		CategoryName:         category,
+	}, nil
 }
 
 func (c *callAPI) getProductInfor(productID string) (map[string]interface{}, error) {
