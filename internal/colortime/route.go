@@ -14,5 +14,17 @@ func RegisterRoutes(r *gin.Engine, colorTimeHandler *ColorTimeHandler) {
 		colorTime.GET("/:id", colorTimeHandler.GetColorTime)
 		colorTime.PUT("/:id", colorTimeHandler.UpdateColorTime)
 		colorTime.DELETE("/:id", colorTimeHandler.DeleteColorTime)
+		colorTime.POST("/add-topic/week", colorTimeHandler.AddTopicToColorTimeWeek)
+		colorTime.POST("/delete-topic/week", colorTimeHandler.DeleteTopicToColorTimeWeek)
+		
+		colorTime.POST("/template", colorTimeHandler.CreateTemplateColorTime)
+		colorTime.GET("/template", colorTimeHandler.GetTemplateColorTimes)
+		colorTime.GET("template/:id", colorTimeHandler.GetTemplateColorTime)
+		colorTime.PUT("template/:id", colorTimeHandler.UpdateTemplateColorTime)
+		colorTime.DELETE("template/:id", colorTimeHandler.DeleteTemplateColorTime)
+		colorTime.POST("template/:id/add-slots", colorTimeHandler.AddSlotsToTemplateColorTime)
+		colorTime.POST("template/:id/edit-slots/:slot_id", colorTimeHandler.EditSlotsToTemplateColorTime)
+		colorTime.POST("template/:id/apply-template", colorTimeHandler.ApplyTemplateColorTime)
 	}
 }
+	

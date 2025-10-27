@@ -1,13 +1,27 @@
 package colortime
 
 type CreateColorTimeRequest struct {
+	Tracking       string  `bson:"tracking" json:"tracking"`
+	OrganizationID string  `bson:"organization_id" json:"organization_id"`
+	Title          string  `json:"title"`
+	Owner          *Owner  `json:"owner" bson:"owner"`
+	Date           string  `json:"date"`
+	StartTime      string  `json:"start_time"`
+	Duration       int     `json:"duration"`
+	Color          string  `json:"color"`
+	Note           *string `json:"note"`
+	ProductID      string  `json:"product_id"`
+	LanguageID     uint    `json:"language_id"`
+}
+
+type UpdateColorTimeRequest struct {
 	Tracking       string `bson:"tracking" json:"tracking"`
 	UseCount       int    `bson:"use_count" json:"use_count"`
+	Owner          *Owner `json:"owner" bson:"owner"`
 	OrganizationID string `bson:"organization_id" json:"organization_id"`
 	Title          string `json:"title"`
-	UserID         string `json:"user_id"`
 	Date           string `json:"date"`
-	Time           string `json:"time"`
+	StartTime      string `json:"start_time"`
 	Duration       int    `json:"duration"`
 	Color          string `json:"color"`
 	Note           string `json:"note"`
@@ -15,16 +29,56 @@ type CreateColorTimeRequest struct {
 	LanguageID     uint   `json:"language_id"`
 }
 
-type UpdateColorTimeRequest struct {
-	Tracking       string `bson:"tracking" json:"tracking"`
-	UseCount       int    `bson:"use_count" json:"use_count"`
+type DeleteColorTimeRequest struct {
 	OrganizationID string `bson:"organization_id" json:"organization_id"`
-	Title          string `json:"title"`
 	Date           string `json:"date"`
-	Time           string `json:"time"`
-	Duration       int    `json:"duration"`
-	Color          string `json:"color"`
-	Note           string `json:"note"`
-	ProductID      string `json:"product_id"`
-	LanguageID     uint   `json:"language_id"`
+}
+
+type CreateTemplateColorTimeRequest struct {
+	Name string `json:"name"`
+}
+
+type UpdateTemplateColorTimeRequest struct {
+	Name string `json:"name"`
+}
+
+type AddSlotsToTemplateColorTimeRequest struct {
+	Title     string `json:"title" bson:"title"`
+	Tracking  string `json:"tracking" bson:"tracking"`
+	StartTime string `json:"start_time" bson:"start_time"`
+	Duration  int    `json:"duration" bson:"duration"`
+	Color     string `json:"color" bson:"color"`
+	Note      string `json:"note" bson:"note"`
+	ProductID string `json:"product_id" bson:"product_id"`
+}
+
+type EditSlotsToTemplateColorTimeRequest struct {
+	Title     string `json:"title" bson:"title"`
+	Tracking  string `json:"tracking" bson:"tracking"`
+	StartTime string `json:"start_time" bson:"start_time"`
+	Duration  int    `json:"duration" bson:"duration"`
+	Color     string `json:"color" bson:"color"`
+	Note      string `json:"note" bson:"note"`
+	ProductID string `json:"product_id" bson:"product_id"`
+}
+
+type ApplyTemplateColorTimeRequest struct {
+	StartDate string `json:"start_date"`
+	EndDate   string `json:"end_date"`
+	Owner     *Owner `json:"owner" bson:"owner"`
+}
+
+type AddTopicToColorTimeWeekRequest struct {
+	Owner          *Owner `json:"owner" bson:"owner"`
+	OrganizationID string `bson:"organization_id" json:"organization_id"`
+	TopicID        string `json:"topic_id" bson:"topic_id"`
+	StartDate      string `json:"start_date"`
+	EndDate        string `json:"end_date"`
+}
+
+type DeleteTopicToColorTimeWeekRequest struct {
+	Owner          *Owner `json:"owner" bson:"owner"`
+	OrganizationID string `bson:"organization_id" json:"organization_id"`
+	StartDate      string `json:"start_date"`
+	EndDate        string `json:"end_date"`
 }

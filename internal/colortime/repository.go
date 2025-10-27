@@ -11,20 +11,30 @@ import (
 
 type ColorTimeRepository interface {
 	CreateColorTime(ctx context.Context, colortime *ColorTime) error
-	GetColorTimes(ctx context.Context, userID, organizationID string, startDate, endDate, start, end time.Time) ([]*ColorTime, error)
-	CountColorTimesTracking(ctx context.Context, userID, organizationID, tracking string, startDate time.Time) (int64, error)
+	GetColorTimes(ctx context.Context, start string, end string) ([]*ColorTime, error)
 	GetColorTime(ctx context.Context, id primitive.ObjectID) (*ColorTime, error)
-	UpdateColorTime(ctx context.Context, colortime *ColorTime) error
-	DeleteColorTime(ctx context.Context, id primitive.ObjectID) error
+	GetColorTimeByDate(ctx context.Context, organizationID string, date time.Time) (*ColorTime, error)
+	UpdateColorTime(ctx context.Context, id primitive.ObjectID, colortime *ColorTime) error
+	CreateColorTimeWeek(ctx context.Context, colortimeWeek *WeekColorTime) error
+	GetColorTimeWeek(ctx context.Context, startDate, endDate *time.Time, organizationID, userID string) (*WeekColorTime, error)
+	UpdateColorTimeWeek(ctx context.Context, id primitive.ObjectID, colortimeWeek *WeekColorTime) error
+
+	CreateTemplateColorTime(ctx context.Context, template *ColorTimeTemplate) error
+	GetTemplateColorTimes(ctx context.Context) ([]*ColorTimeTemplate, error)
+	GetTemplateColorTime(ctx context.Context, id primitive.ObjectID) (*ColorTimeTemplate, error)
+	UpdateTemplateColorTime(ctx context.Context, template *ColorTimeTemplate) error
+	DeleteTemplateColorTime(ctx context.Context, id primitive.ObjectID) error
 }
 
 type colorTimeRepository struct {
-	ColorTimeCollection *mongo.Collection
+	ColorTimeCollection         *mongo.Collection
+	ColorTimeTemplateCollection *mongo.Collection
 }
 
-func NewColorTimeRepository(colorTimeCollection *mongo.Collection) ColorTimeRepository {
+func NewColorTimeRepository(colorTimeCollection, colorTimeTemplateCollection *mongo.Collection) ColorTimeRepository {
 	return &colorTimeRepository{
-		ColorTimeCollection: colorTimeCollection,
+		ColorTimeCollection:         colorTimeCollection,
+		ColorTimeTemplateCollection: colorTimeTemplateCollection,
 	}
 }
 
@@ -33,47 +43,63 @@ func (r *colorTimeRepository) CreateColorTime(ctx context.Context, colortime *Co
 	return err
 }
 
-func (r *colorTimeRepository) GetColorTimes(ctx context.Context, userID, organizationID string, startDate, endDate, start, end time.Time) ([]*ColorTime, error) {
+func (r *colorTimeRepository) GetColorTimeByDate(ctx context.Context, organizationID string, date time.Time) (*ColorTime, error) {
+
+	var colortime ColorTime
 
 	filter := bson.M{
-		"user_id":         userID,
 		"organization_id": organizationID,
+		"date":            date,
 	}
 
-	if start.Before(end) {
-		filter["date"] = bson.M{
-			"$gte": startDate,
-			"$lte": endDate,
+	err := r.ColorTimeCollection.FindOne(ctx, filter).Decode(&colortime)
+	if err != nil {
+		if err == mongo.ErrNoDocuments {
+			return nil, nil
 		}
-		filter["time"] = bson.M{
-			"$gte": start,
-			"$lte": end,
+		return nil, err
+	}
+
+	return &colortime, err
+
+}
+
+func (r *colorTimeRepository) GetColorTimes(ctx context.Context, start string, end string) ([]*ColorTime, error) {
+
+	filter := bson.M{}
+
+	if start != "" && end != "" {
+		startParse, err := time.Parse("2006-01-02", start)
+		if err != nil {
+			return nil, err
 		}
-	} else {
-		filter["$and"] = []bson.M{
-			{"date": bson.M{"$gte": startDate, "$lte": endDate}},
-			{"$or": []bson.M{
-				{
-					"time": bson.M{"$gte": start},
-				},
-				{
-					"time": bson.M{"$lte": end},
-				},
-			}},
+
+		endParse, err := time.Parse("2006-01-02", end)
+		if err != nil {
+			return nil, err
+		}
+
+		filter = bson.M{
+			"date": bson.M{
+				"$gte": startParse,
+				"$lte": endParse,
+			},
 		}
 	}
+
+	var colortimes []*ColorTime
 
 	cursor, err := r.ColorTimeCollection.Find(ctx, filter)
 	if err != nil {
 		return nil, err
 	}
 
-	var colorTimes []*ColorTime
-	if err := cursor.All(ctx, &colorTimes); err != nil {
+	if err := cursor.All(ctx, &colortimes); err != nil {
 		return nil, err
 	}
 
-	return colorTimes, nil
+	return colortimes, nil
+
 }
 
 func (r *colorTimeRepository) GetColorTime(ctx context.Context, id primitive.ObjectID) (*ColorTime, error) {
@@ -88,32 +114,97 @@ func (r *colorTimeRepository) GetColorTime(ctx context.Context, id primitive.Obj
 
 }
 
-func (r *colorTimeRepository) CountColorTimesTracking(ctx context.Context, userID, organizationID, tracking string, startDate time.Time) (int64, error) {
+func (r *colorTimeRepository) UpdateColorTime(ctx context.Context, id primitive.ObjectID, colortime *ColorTime) error {
+
+	_, err := r.ColorTimeCollection.UpdateOne(ctx, bson.M{"_id": id}, bson.M{"$set": colortime})
+	return err
+
+}
+
+func (r *colorTimeRepository) CreateColorTimeWeek(ctx context.Context, colortimeWeek *WeekColorTime) error {
+	_, err := r.ColorTimeCollection.InsertOne(ctx, colortimeWeek)
+	return err
+}
+
+func (r *colorTimeRepository) GetColorTimeWeek(ctx context.Context, startDate, endDate *time.Time, organizationID, userID string) (*WeekColorTime, error) {
 
 	filter := bson.M{
-		"user_id":         userID,
 		"organization_id": organizationID,
-		"tracking":        tracking,
-		"date": bson.M{
-			"$lt": startDate,
-		},
+		"owner.owner_id":  userID,
+		"start_date":      startDate,
+		"end_date":        endDate,
 	}
 
-	count, err := r.ColorTimeCollection.CountDocuments(ctx, filter)
+	var colortimeWeek WeekColorTime
+
+	if err := r.ColorTimeCollection.FindOne(ctx, filter).Decode(&colortimeWeek); err != nil {
+		if err == mongo.ErrNoDocuments {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	return &colortimeWeek, nil
+
+}
+
+func (r *colorTimeRepository) UpdateColorTimeWeek(ctx context.Context, id primitive.ObjectID, colortimeWeek *WeekColorTime) error {
+	_, err := r.ColorTimeCollection.UpdateOne(ctx, bson.M{"_id": id}, bson.M{"$set": colortimeWeek})
+	return err
+}
+
+func (r *colorTimeRepository) CreateTemplateColorTime(ctx context.Context, template *ColorTimeTemplate) error {
+	_, err := r.ColorTimeTemplateCollection.InsertOne(ctx, template)
+	return err
+}
+
+func (r *colorTimeRepository) GetTemplateColorTimes(ctx context.Context) ([]*ColorTimeTemplate, error) {
+
+	var templates []*ColorTimeTemplate
+
+	filter := bson.M{
+		"is_deleted": false,
+	}
+
+	cursor, err := r.ColorTimeTemplateCollection.Find(ctx, filter)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
 
-	return count, nil
+	if err := cursor.All(ctx, &templates); err != nil {
+		return nil, err
+	}
+
+	return templates, nil
 
 }
 
-func (r *colorTimeRepository) UpdateColorTime(ctx context.Context, colortime *ColorTime) error {
-	_, err := r.ColorTimeCollection.UpdateOne(ctx, bson.M{"_id": colortime.ID}, bson.M{"$set": colortime})
+func (r *colorTimeRepository) GetTemplateColorTime(ctx context.Context, id primitive.ObjectID) (*ColorTimeTemplate, error) {
+
+	var template ColorTimeTemplate
+
+	if err := r.ColorTimeTemplateCollection.FindOne(ctx, bson.M{"_id": id}).Decode(&template); err != nil {
+		return nil, err
+	}
+
+	return &template, nil
+
+}
+
+func (r *colorTimeRepository) UpdateTemplateColorTime(ctx context.Context, template *ColorTimeTemplate) error {
+	_, err := r.ColorTimeTemplateCollection.UpdateOne(ctx, bson.M{"_id": template.ID}, bson.M{"$set": template})
 	return err
 }
 
-func (r *colorTimeRepository) DeleteColorTime(ctx context.Context, id primitive.ObjectID) error {
-	_, err := r.ColorTimeCollection.DeleteOne(ctx, bson.M{"_id": id})
-	return err
+func (r *colorTimeRepository) DeleteTemplateColorTime(ctx context.Context, id primitive.ObjectID) error {
+
+	filter := bson.M{"_id": id}
+	update := bson.M{"$set": bson.M{"is_deleted": true}}
+
+	_, err := r.ColorTimeTemplateCollection.UpdateOne(ctx, filter, update)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }

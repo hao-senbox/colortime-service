@@ -3,231 +3,405 @@ package colortime
 import (
 	"colortime-service/internal/language"
 	"colortime-service/internal/product"
+	"colortime-service/internal/user"
 	"context"
 	"errors"
+	"fmt"
 	"log"
-	"strings"
 	"time"
 
 	"go.mongodb.org/mongo-driver/bson/primitive"
+	"go.mongodb.org/mongo-driver/mongo"
 )
 
 type ColorTimeService interface {
-	CreateColorTime(ctx context.Context, req CreateColorTimeRequest) error
-	GetColorTimes(ctx context.Context, userID, organizationID string, baseDate string, timeRange string) ([]*ColorTimeResponse, error)
-	GetColorTime(ctx context.Context, id string) (*ColorTimeResponse, error)
-	UpdateColorTime(ctx context.Context, req UpdateColorTimeRequest, id string) error
-	DeleteColorTime(ctx context.Context, id string) error
+	CreateColorTime(ctx context.Context, req *CreateColorTimeRequest, userID string) error
+	GetColorTimes(ctx context.Context, start string, end string) ([]*ColorTime, error)
+	GetColorTime(ctx context.Context, id string) (*ColorTime, error)
+	UpdateColorTime(ctx context.Context, req *UpdateColorTimeRequest, id string) error
+	DeleteColorTime(ctx context.Context, req *DeleteColorTimeRequest, id string) error
+	AddTopicToColorTimeWeek(ctx context.Context, req *AddTopicToColorTimeWeekRequest, userID string) error
+	DeleteTopicToColorTimeWeek(ctx context.Context, req *DeleteTopicToColorTimeWeekRequest, userID string) error
+
+	CreateTemplateColorTime(ctx context.Context, req *CreateTemplateColorTimeRequest, userID string) error
+	GetTemplateColorTimes(ctx context.Context) ([]*ColorTimeTemplate, error)
+	GetTemplateColorTime(ctx context.Context, id string) (*ColorTimeTemplate, error)
+	UpdateTemplateColorTime(ctx context.Context, req *UpdateTemplateColorTimeRequest, id string) error
+	DeleteTemplateColorTime(ctx context.Context, id string) error
+	AddSlotsToTemplateColorTime(ctx context.Context, req *AddSlotsToTemplateColorTimeRequest, id string) error
+	EditSlotsToTemplateColorTime(ctx context.Context, req *EditSlotsToTemplateColorTimeRequest, id string, slot_id string) error
+	ApplyTemplateColorTime(ctx context.Context, req *ApplyTemplateColorTimeRequest, id string, userID string) error
 }
 
 type colorTimeService struct {
 	ColorTimeRepository ColorTimeRepository
 	ProductService      product.ProductService
 	LanguageService     language.MessageLanguageGateway
+	UserService         user.UserService
 }
 
-func NewColorTimeService(colorTimeRepository ColorTimeRepository, productService product.ProductService, languageService language.MessageLanguageGateway) ColorTimeService {
+func NewColorTimeService(colorTimeRepository ColorTimeRepository,
+	productService product.ProductService,
+	languageService language.MessageLanguageGateway,
+	userService user.UserService) ColorTimeService {
 	return &colorTimeService{
 		ColorTimeRepository: colorTimeRepository,
 		ProductService:      productService,
 		LanguageService:     languageService,
+		UserService:         userService,
 	}
 }
 
-func (s *colorTimeService) CreateColorTime(ctx context.Context, req CreateColorTimeRequest) error {
+func (s *colorTimeService) CreateColorTime(ctx context.Context, req *CreateColorTimeRequest, userID string) error {
 
-	if req.UserID == "" {
-		return errors.New("user id is required")
-	}
+	if req.Owner == nil {
+		return errors.New("owner is required")
+	} else {
+		if req.Owner.OwnerID == "" {
+			return errors.New("owner id is required")
+		}
 
-	if req.Title == "" {
-		return errors.New("title is required")
+		if req.Owner.OwnerRole == "" {
+			return errors.New("owner role is required")
+		}
 	}
 
 	if req.Date == "" {
 		return errors.New("date is required")
 	}
 
-	dateParese, err := time.Parse("2006-01-02", req.Date)
+	if req.OrganizationID == "" {
+		return errors.New("organization id is required")
+	}
+
+	dateParse, err := time.Parse("2006-01-02", req.Date)
 	if err != nil {
-		return errors.New("invalid date format")
+		return err
 	}
 
-	if req.Time == "" {
-		return errors.New("time is required")
-	}
-
-	timeParse, err := time.Parse("15:04", req.Time)
-	if err != nil {
-		return errors.New("invalid time format")
-	}
-
-	timeOnly := time.Date(1970, 1, 1,
-		timeParse.Hour(), timeParse.Minute(), timeParse.Second(),
-		0, time.UTC,
-	)
-
-	if req.Duration == 0 {
-		return errors.New("duration is required")
+	if req.Title == "" {
+		return errors.New("title is required")
 	}
 
 	if req.Color == "" {
 		return errors.New("color is required")
 	}
 
+	if req.Duration == 0 {
+		return errors.New("duration is required")
+	}
+
+	if req.StartTime == "" {
+		return errors.New("start_time is required")
+	}
+
+	if req.Tracking == "" {
+		return errors.New("tracking is required")
+	}
+
+	var product_id *string
 	if req.ProductID == "" {
-		return errors.New("product id is required")
+		product_id = nil
 	}
 
-	objProductID, err := primitive.ObjectIDFromHex(req.ProductID)
+	startTimeParse, err := time.Parse("15:04", req.StartTime)
 	if err != nil {
-		return errors.New("invalid product id format")
+		return err
 	}
 
-	if req.Note == "" {
-		return errors.New("note is required")
+	endTime := startTimeParse.Add(time.Duration(req.Duration) * time.Minute)
+
+	if startTimeParse.Hour() != endTime.Hour() {
+		return errors.New("start_time and end_time must be in the same hour")
+	}
+
+	colortime, err := s.ColorTimeRepository.GetColorTimeByDate(ctx, req.OrganizationID, dateParse)
+	if err != nil {
+		return err
+	}
+
+	if colortime == nil {
+		data := &ColorTime{
+			ID:      primitive.NewObjectID(),
+			Date:    dateParse,
+			TopicID: nil,
+			TimeSlots: []*TemplateSlot{
+				{
+					SlotID:    primitive.NewObjectID(),
+					Title:     req.Title,
+					Tracking:  req.Tracking,
+					UseCount:  0,
+					StartTime: startTimeParse,
+					EndTime:   endTime,
+					Duration:  req.Duration,
+					Color:     req.Color,
+					Note:      *req.Note,
+					ProductID: product_id,
+				},
+			},
+			CreatedBy: userID,
+			CreatedAt: time.Now(),
+			UpdatedAt: time.Now(),
+		}
+		return s.ColorTimeRepository.CreateColorTime(ctx, data)
+	} else {
+		var useCount int
+
+		for _, slot := range colortime.TimeSlots {
+			// if startTimeParse.Before(slot.EndTime) && endTime.After(slot.StartTime) {
+			// 	return fmt.Errorf(
+			// 		"slot overlaps with existing slot: %s (%s–%s)",
+			// 		slot.Title,
+			// 		slot.StartTime.Format("15:04"),
+			// 		slot.EndTime.Format("15:04"),
+			// 	)
+			// }
+			if slot.Tracking == req.Tracking {
+				useCount++
+			}
+		}
+
+		data := TemplateSlot{
+			SlotID:    primitive.NewObjectID(),
+			Title:     req.Title,
+			Tracking:  req.Tracking,
+			UseCount:  useCount,
+			StartTime: startTimeParse,
+			EndTime:   endTime,
+			Duration:  req.Duration,
+			Color:     req.Color,
+			Note:      *req.Note,
+			ProductID: product_id,
+		}
+
+		colortime.TimeSlots = append(colortime.TimeSlots, &data)
+
+		return s.ColorTimeRepository.UpdateColorTime(ctx, colortime.ID, colortime)
+
+	}
+}
+
+func (s *colorTimeService) GetColorTimes(ctx context.Context, start string, end string) ([]*ColorTime, error) {
+	return s.ColorTimeRepository.GetColorTimes(ctx, start, end)
+}
+
+func (s *colorTimeService) GetColorTime(ctx context.Context, id string) (*ColorTime, error) {
+
+	objectID, err := primitive.ObjectIDFromHex(id)
+	if err != nil {
+		return nil, err
+	}
+
+	return s.ColorTimeRepository.GetColorTime(ctx, objectID)
+
+}
+
+func (s *colorTimeService) UpdateColorTime(ctx context.Context, req *UpdateColorTimeRequest, id string) error {
+
+	if req.Owner == nil {
+		return errors.New("owner is required")
+	} else {
+		if req.Owner.OwnerID == "" {
+			return errors.New("owner id is required")
+		}
+
+		if req.Owner.OwnerRole == "" {
+			return errors.New("owner role is required")
+		}
+	}
+
+	if req.Date == "" {
+		return errors.New("date is required")
 	}
 
 	if req.OrganizationID == "" {
 		return errors.New("organization id is required")
 	}
 
-	var useCount int
-
-	count, err := s.ColorTimeRepository.CountColorTimesTracking(ctx, req.UserID, req.OrganizationID, req.Tracking, dateParese)
+	dateParse, err := time.Parse("2006-01-02", req.Date)
 	if err != nil {
 		return err
 	}
 
-	if count > 0 {
-		useCount = int(count) + 1
-	} else {
-		useCount = 1
+	if req.Title == "" {
+		return errors.New("title is required")
 	}
 
-	colorTime := &ColorTime{
+	if req.Color == "" {
+		return errors.New("color is required")
+	}
+
+	if req.Duration == 0 {
+		return errors.New("duration is required")
+	}
+
+	if req.StartTime == "" {
+		return errors.New("start_time is required")
+	}
+
+	if req.Tracking == "" {
+		return errors.New("tracking is required")
+	}
+
+	if req.OrganizationID == "" {
+		return errors.New("organization id is required")
+	}
+
+	var product_id *string
+	if req.ProductID == "" {
+		product_id = nil
+	} else {
+		product_id = &req.ProductID
+	}
+
+	startTimeParse, err := time.Parse("15:04", req.StartTime)
+	if err != nil {
+		return err
+	}
+
+	endTime := startTimeParse.Add(time.Duration(req.Duration) * time.Minute)
+
+	if startTimeParse.Hour() != endTime.Hour() {
+		return errors.New("start_time and end_time must be in the same hour")
+	}
+
+	colortime, err := s.ColorTimeRepository.GetColorTimeByDate(ctx, req.OrganizationID, dateParse)
+	if err != nil {
+		return err
+	}
+
+	if colortime == nil {
+		return fmt.Errorf("color time not found")
+	}
+
+	slotObjectID, err := primitive.ObjectIDFromHex(id)
+	if err != nil {
+		return errors.New("invalid id format")
+	}
+
+	var found bool
+	var useCount int
+
+	for i, slot := range colortime.TimeSlots {
+		if slot.SlotID == slotObjectID {
+			found = true
+			for _, other := range colortime.TimeSlots {
+				if other.Tracking == req.Tracking {
+					useCount++
+				}
+			}
+
+			colortime.TimeSlots[i].Title = req.Title
+			colortime.TimeSlots[i].Color = req.Color
+			colortime.TimeSlots[i].StartTime = startTimeParse
+			colortime.TimeSlots[i].EndTime = endTime
+			colortime.TimeSlots[i].Duration = req.Duration
+			colortime.TimeSlots[i].Tracking = req.Tracking
+			colortime.TimeSlots[i].UseCount = useCount
+			colortime.TimeSlots[i].Note = req.Note
+			colortime.TimeSlots[i].ProductID = product_id
+			break
+		}
+	}
+
+	if !found {
+		return errors.New("slot not found")
+	}
+
+	return s.ColorTimeRepository.UpdateColorTime(ctx, colortime.ID, colortime)
+
+}
+
+func (s *colorTimeService) DeleteColorTime(ctx context.Context, req *DeleteColorTimeRequest, id string) error {
+
+	objectID, err := primitive.ObjectIDFromHex(id)
+	if err != nil {
+		return errors.New("invalid id format")
+	}
+
+	if req.Date == "" {
+		return errors.New("date is required")
+	}
+
+	if req.OrganizationID == "" {
+		return errors.New("organization id is required")
+	}
+
+	dateParse, err := time.Parse("2006-01-02", req.Date)
+	if err != nil {
+		return err
+	}
+
+	colortime, err := s.ColorTimeRepository.GetColorTimeByDate(ctx, req.OrganizationID, dateParse)
+	if err != nil {
+		return err
+	}
+
+	if colortime == nil {
+		return fmt.Errorf("color time not found")
+	}
+
+	var found bool
+	for i, slot := range colortime.TimeSlots {
+		if slot.SlotID == objectID {
+			found = true
+			colortime.TimeSlots = append(colortime.TimeSlots[:i], colortime.TimeSlots[i+1:]...)
+			break
+		}
+	}
+
+	if !found {
+		return errors.New("slot not found")
+	}
+
+	return s.ColorTimeRepository.UpdateColorTime(ctx, colortime.ID, colortime)
+
+}
+
+func (s *colorTimeService) CreateTemplateColorTime(ctx context.Context, req *CreateTemplateColorTimeRequest, userID string) error {
+
+	if req.Name == "" {
+		return errors.New("name is required")
+	}
+
+	if userID == "" {
+		return errors.New("user id is required")
+	}
+
+	user, err := s.UserService.GetCurrentUser(ctx)
+	if err != nil {
+		log.Printf("[colorTimeService] CreateTemplateColorTime: %v", err)
+	}
+
+	if user == nil {
+		log.Printf("[colorTimeService] CreateTemplateColorTime: user not found")
+	}
+
+	var OrgID string
+	if user != nil {
+		OrgID = user.OrganizationAdmin.ID
+	}
+
+	data := &ColorTimeTemplate{
 		ID:             primitive.NewObjectID(),
-		OrganizationID: req.OrganizationID,
-		UserID:         req.UserID,
-		Tracking:       req.Tracking,
-		UseCount:       useCount,
-		Title:          req.Title,
-		Date:           dateParese,
-		Time:           timeOnly,
-		Duration:       req.Duration,
-		Color:          req.Color,
-		Note:           req.Note,
-		ProductID:      objProductID,
+		OrganizationID: OrgID,
+		Name:           req.Name,
+		ColorTimes:     []*TemplateSlot{},
+		CreatedBy:      userID,
+		IsDeleted:      false,
 		CreatedAt:      time.Now(),
 		UpdatedAt:      time.Now(),
 	}
 
-	updateReq := UpdateColorTimeRequest{
-		Tracking:       req.Tracking,
-		UseCount:       req.UseCount,
-		OrganizationID: req.OrganizationID,
-		Title:          req.Title,
-		Date:           req.Date,
-		Time:           req.Time,
-		Duration:       req.Duration,
-		Color:          req.Color,
-		Note:           req.Note,
-		ProductID:      req.ProductID,
-		LanguageID:     req.LanguageID,
-	}
-
-	languageReq := BuildColortimeMessagesUpdate(colorTime.ID.Hex(), updateReq)
-
-	err = s.LanguageService.UploadMessages(ctx, languageReq)
-	if err != nil {
-		return err
-	}
-
-	return s.ColorTimeRepository.CreateColorTime(ctx, colorTime)
+	return s.ColorTimeRepository.CreateTemplateColorTime(ctx, data)
 
 }
 
-func (s *colorTimeService) GetColorTimes(ctx context.Context, userID, organizationID string, baseDate string, timeRange string) ([]*ColorTimeResponse, error) {
-
-	var colortimesData []*ColorTimeResponse
-
-	if userID == "" {
-		return nil, errors.New("user id is required")
-	}
-
-	if baseDate == "" {
-		return nil, errors.New("base date is required")
-	}
-
-	if timeRange == "" {
-		return nil, errors.New("time range is required")
-	}
-
-	baseDateParse, err := time.Parse("2006-01-02", baseDate)
-	if err != nil {
-		return nil, errors.New("invalid base date format")
-	}
-
-	startDate, endDate := getWeekRange(baseDateParse)
-
-	start, end, err := parseTimeRange(timeRange)
-	if err != nil {
-		return nil, err
-	}
-
-	colortimes, err := s.ColorTimeRepository.GetColorTimes(ctx, userID, organizationID, startDate, endDate, start, end)
-	if err != nil {
-		return nil, err
-	}
-
-	for _, colortime := range colortimes {
-
-		productData, err := s.ProductService.GetProductInfor(colortime.ProductID.Hex())
-		if err != nil {
-			log.Println(err)
-		}
-
-		languages, err := s.LanguageService.GetMessageLanguages(ctx, colortime.ID.Hex())
-		if err != nil {
-			log.Println(err)
-		}
-
-		var productRes *product.Product
-		if productData != nil {
-			productRes = &product.Product{
-				ID:                   productData.ID,
-				ProductName:          productData.ProductName,
-				OriginalPriceStore:   productData.OriginalPriceStore,
-				OriginalPriceService: productData.OriginalPriceService,
-				ProductDescription:   productData.ProductDescription,
-				CategoryName:         productData.CategoryName,
-				TopicName:            productData.TopicName,
-			}
-		} else {
-			productRes = nil
-		}
-
-		colorTimeData := &ColorTimeResponse{
-			ID:               colortime.ID,
-			UserID:           colortime.UserID,
-			Title:            colortime.Title,
-			Date:             colortime.Date,
-			Time:             colortime.Time,
-			Duration:         colortime.Duration,
-			MessageLanguages: languages,
-			Color:            colortime.Color,
-			Note:             colortime.Note,
-			Product:          productRes,
-		}
-
-		colortimesData = append(colortimesData, colorTimeData)
-	}
-
-	return colortimesData, nil
-
+func (s *colorTimeService) GetTemplateColorTimes(ctx context.Context) ([]*ColorTimeTemplate, error) {
+	return s.ColorTimeRepository.GetTemplateColorTimes(ctx)
 }
 
-func (s *colorTimeService) GetColorTime(ctx context.Context, id string) (*ColorTimeResponse, error) {
+func (s *colorTimeService) GetTemplateColorTime(ctx context.Context, id string) (*ColorTimeTemplate, error) {
 
 	if id == "" {
 		return nil, errors.New("id is required")
@@ -238,49 +412,41 @@ func (s *colorTimeService) GetColorTime(ctx context.Context, id string) (*ColorT
 		return nil, errors.New("invalid id format")
 	}
 
-	colortime, err := s.ColorTimeRepository.GetColorTime(ctx, objectID)
-	if err != nil {
-		return nil, err
-	}
-
-	productData, err := s.ProductService.GetProductInfor(colortime.ProductID.Hex())
-	if err != nil {
-		log.Println(err)
-	}
-
-	languages, err := s.LanguageService.GetMessageLanguages(ctx, colortime.ID.Hex())
-	if err != nil {
-		log.Println(err)
-	}
-
-	colorTimeData := &ColorTimeResponse{
-		ID:               colortime.ID,
-		UserID:           colortime.UserID,
-		Title:            colortime.Title,
-		Date:             colortime.Date,
-		Time:             colortime.Time,
-		Duration:         colortime.Duration,
-		MessageLanguages: languages,
-		Color:            colortime.Color,
-		Note:             colortime.Note,
-		Product: &product.Product{
-			ID:                   productData.ID,
-			ProductName:          productData.ProductName,
-			OriginalPriceStore:   productData.OriginalPriceStore,
-			OriginalPriceService: productData.OriginalPriceService,
-			ProductDescription:   productData.ProductDescription,
-			CategoryName:         productData.CategoryName,
-			TopicName:            productData.TopicName,
-		},
-	}
-	return colorTimeData, nil
+	return s.ColorTimeRepository.GetTemplateColorTime(ctx, objectID)
 
 }
 
-func (s *colorTimeService) UpdateColorTime(ctx context.Context, req UpdateColorTimeRequest, id string) error {
+func (s *colorTimeService) UpdateTemplateColorTime(ctx context.Context, req *UpdateTemplateColorTimeRequest, id string) error {
 
-	var date time.Time
-	var productID primitive.ObjectID
+	if id == "" {
+		return errors.New("id is required")
+	}
+
+	if req.Name == "" {
+		return errors.New("name is required")
+	}
+
+	objectID, err := primitive.ObjectIDFromHex(id)
+	if err != nil {
+		return errors.New("invalid id format")
+	}
+
+	template, err := s.ColorTimeRepository.GetTemplateColorTime(ctx, objectID)
+	if err != nil {
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			return errors.New("template not found")
+		}
+		return err
+	}
+
+	template.Name = req.Name
+	template.UpdatedAt = time.Now()
+
+	return s.ColorTimeRepository.UpdateTemplateColorTime(ctx, template)
+
+}
+
+func (s *colorTimeService) DeleteTemplateColorTime(ctx context.Context, id string) error {
 
 	if id == "" {
 		return errors.New("id is required")
@@ -291,115 +457,206 @@ func (s *colorTimeService) UpdateColorTime(ctx context.Context, req UpdateColorT
 		return errors.New("invalid id format")
 	}
 
-	colorTime, err := s.ColorTimeRepository.GetColorTime(ctx, objectID)
-	if err != nil {
-		return err
-	}
+	return s.ColorTimeRepository.DeleteTemplateColorTime(ctx, objectID)
 
-	if colorTime == nil {
-		return errors.New("color time not found")
+}
+
+func (s *colorTimeService) AddSlotsToTemplateColorTime(ctx context.Context, req *AddSlotsToTemplateColorTimeRequest, id string) error {
+
+	if id == "" {
+		return errors.New("id is required")
 	}
 
 	if req.Title == "" {
-		req.Title = colorTime.Title
-	}
-
-	if req.Date == "" {
-		date = colorTime.Date
-	} else {
-		dateParse, err := time.Parse("2006-01-02", req.Date)
-		if err != nil {
-			return errors.New("invalid date format")
-		}
-
-		date = dateParse
-	}
-
-	if req.Time == "" {
-		req.Time = colorTime.Time.Format("15:04")
-	}
-
-	if req.Duration == 0 {
-		req.Duration = colorTime.Duration
+		return errors.New("title is required")
 	}
 
 	if req.Color == "" {
-		req.Color = colorTime.Color
+		return errors.New("color is required")
 	}
 
-	if req.OrganizationID == "" {
-		req.OrganizationID = colorTime.OrganizationID
+	if req.StartTime == "" {
+		return errors.New("start_time is required")
 	}
 
-	if req.ProductID == "" {
-		productID = colorTime.ProductID
-	} else {
-		objProductID, err := primitive.ObjectIDFromHex(req.ProductID)
-		if err != nil {
-			return errors.New("invalid product id format")
+	if req.Duration == 0 {
+		return errors.New("duration is required")
+	}
+
+	objectID, err := primitive.ObjectIDFromHex(id)
+	if err != nil {
+		return errors.New("invalid id format")
+	}
+
+	startTimeParse, err := time.Parse("15:04", req.StartTime)
+	if err != nil {
+		return err
+	}
+
+	endTime := startTimeParse.Add(time.Duration(req.Duration) * time.Minute)
+
+	if startTimeParse.Hour() != endTime.Hour() {
+		return errors.New("start_time and end_time must be in the same hour")
+	}
+
+	template, err := s.ColorTimeRepository.GetTemplateColorTime(ctx, objectID)
+	if err != nil {
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			return errors.New("template not found")
 		}
-		productID = objProductID
-	}
-
-	if req.Note == "" {
-		req.Note = colorTime.Note
-	}
-
-	if req.Tracking == "" {
-		req.Tracking = colorTime.Tracking
-	}
-
-	timeParse, err := time.Parse("15:04", req.Time)
-	if err != nil {
-		return errors.New("invalid time format")
-	}
-
-	timeOnly := time.Date(1970, 1, 1,
-		timeParse.Hour(), timeParse.Minute(), timeParse.Second(),
-		0, time.UTC,
-	)
-
-	var useCount int
-
-	count, err := s.ColorTimeRepository.CountColorTimesTracking(ctx, colorTime.UserID, req.OrganizationID, req.Tracking, date)
-	if err != nil {
 		return err
 	}
 
-	if count > 0 {
-		useCount = int(count) + 1
+	if len(template.ColorTimes) <= 0 {
+
+		data := &TemplateSlot{
+			SlotID:    primitive.NewObjectID(),
+			Title:     req.Title,
+			Tracking:  req.Tracking,
+			UseCount:  0,
+			StartTime: startTimeParse,
+			EndTime:   endTime,
+			Duration:  req.Duration,
+			Color:     req.Color,
+			Note:      req.Note,
+			ProductID: &req.ProductID,
+		}
+
+		template.ColorTimes = append(template.ColorTimes, data)
+
+		return s.ColorTimeRepository.UpdateTemplateColorTime(ctx, template)
 	} else {
-		useCount = 1
+		var useCount int
+
+		for _, slot := range template.ColorTimes {
+			// if startTimeParse.Before(slot.EndTime) && endTime.After(slot.StartTime) {
+			// 	return fmt.Errorf(
+			// 		"slot overlaps with existing slot: %s (%s–%s)",
+			// 		slot.Title,
+			// 		slot.StartTime.Format("15:04"),
+			// 		slot.EndTime.Format("15:04"),
+			// 	)
+			// }
+			if slot.Tracking == req.Tracking {
+				useCount++
+			}
+		}
+
+		data := &TemplateSlot{
+			SlotID:    primitive.NewObjectID(),
+			Title:     req.Title,
+			Tracking:  req.Tracking,
+			UseCount:  useCount,
+			StartTime: startTimeParse,
+			EndTime:   endTime,
+			Duration:  req.Duration,
+			Color:     req.Color,
+			Note:      req.Note,
+			ProductID: &req.ProductID,
+		}
+
+		template.ColorTimes = append(template.ColorTimes, data)
 	}
 
-	data := &ColorTime{
-		ID:             colorTime.ID,
-		OrganizationID: req.OrganizationID,
-		UserID:         colorTime.UserID,
-		Tracking:       req.Tracking,
-		UseCount:       useCount,
-		Title:          req.Title,
-		Date:           date,
-		Time:           timeOnly,
-		Duration:       req.Duration,
-		Color:          req.Color,
-		ProductID:      productID,
-		Note:           req.Note,
-		UpdatedAt:      time.Now(),
+	return s.ColorTimeRepository.UpdateTemplateColorTime(ctx, template)
+}
+
+func (s *colorTimeService) EditSlotsToTemplateColorTime(ctx context.Context, req *EditSlotsToTemplateColorTimeRequest, id string, slot_id string) error {
+
+	if id == "" {
+		return errors.New("id is required")
 	}
 
-	languageReq := BuildColortimeMessagesUpdate(colorTime.ID.Hex(), req)
+	if req.Title == "" {
+		return errors.New("title is required")
+	}
 
-	err = s.LanguageService.UploadMessages(ctx, languageReq)
+	if req.Color == "" {
+		return errors.New("color is required")
+	}
+
+	if req.StartTime == "" {
+		return errors.New("start_time is required")
+	}
+
+	if req.Duration == 0 {
+		return errors.New("duration is required")
+	}
+
+	objectID, err := primitive.ObjectIDFromHex(id)
+	if err != nil {
+		return errors.New("invalid id format")
+	}
+
+	slotOjectID, err := primitive.ObjectIDFromHex(slot_id)
+	if err != nil {
+		return errors.New("invalid id format")
+	}
+
+	startTimeParse, err := time.Parse("15:04", req.StartTime)
 	if err != nil {
 		return err
 	}
 
-	return s.ColorTimeRepository.UpdateColorTime(ctx, data)
+	endTime := startTimeParse.Add(time.Duration(req.Duration) * time.Minute)
+
+	if startTimeParse.Hour() != endTime.Hour() {
+		return errors.New("start_time and end_time must be in the same hour")
+	}
+
+	template, err := s.ColorTimeRepository.GetTemplateColorTime(ctx, objectID)
+	if err != nil {
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			return errors.New("template not found")
+		}
+		return err
+	}
+
+	if len(template.ColorTimes) <= 0 {
+		return errors.New("template not found")
+	}
+
+	var found bool
+	var useCount int
+	for i, slot := range template.ColorTimes {
+		if slot.SlotID == slotOjectID {
+			found = true
+			for _, other := range template.ColorTimes {
+				// if startTimeParse.Before(other.EndTime) && endTime.After(other.StartTime) {
+				// 	return fmt.Errorf(
+				// 		"slot overlaps with existing slot: %s (%s–%s)",
+				// 		other.Title,
+				// 		other.StartTime.Format("15:04"),
+				// 		other.EndTime.Format("15:04"),
+				// 	)
+				// }
+				if other.Tracking == req.Tracking {
+					useCount++
+				}
+			}
+
+			template.ColorTimes[i].Title = req.Title
+			template.ColorTimes[i].Tracking = req.Tracking
+			template.ColorTimes[i].UseCount = useCount
+			template.ColorTimes[i].Color = req.Color
+			template.ColorTimes[i].StartTime = startTimeParse
+			template.ColorTimes[i].EndTime = endTime
+			template.ColorTimes[i].Duration = req.Duration
+			template.ColorTimes[i].Note = req.Note
+			template.ColorTimes[i].ProductID = &req.ProductID
+			break
+		}
+	}
+
+	if !found {
+		return errors.New("slot with given tracking not found")
+	}
+
+	return s.ColorTimeRepository.UpdateTemplateColorTime(ctx, template)
 
 }
 
-func (s *colorTimeService) DeleteColorTime(ctx context.Context, id string) error {
+func (s *colorTimeService) ApplyTemplateColorTime(ctx context.Context, req *ApplyTemplateColorTimeRequest, id string, userID string) error {
 
 	if id == "" {
 		return errors.New("id is required")
@@ -410,46 +667,214 @@ func (s *colorTimeService) DeleteColorTime(ctx context.Context, id string) error
 		return errors.New("invalid id format")
 	}
 
-	return s.ColorTimeRepository.DeleteColorTime(ctx, objectID)
+	template, err := s.ColorTimeRepository.GetTemplateColorTime(ctx, objectID)
+	if err != nil {
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			return errors.New("template not found")
+		}
+		return err
+	}
+
+	if len(template.ColorTimes) <= 0 {
+		return errors.New("template not found")
+	}
+
+	if userID == "" {
+		return errors.New("user id is required")
+	}
+
+	startDate, err := time.Parse("2006-01-02", req.StartDate)
+	if err != nil {
+		return err
+	}
+
+	endDate, err := time.Parse("2006-01-02", req.EndDate)
+	if err != nil {
+		return err
+	}
+
+	for startDate.Before(endDate) || startDate.Equal(endDate) {
+
+		colortime, err := s.ColorTimeRepository.GetColorTimeByDate(ctx, template.OrganizationID, startDate)
+		if err != nil {
+			return err
+		}
+		if colortime == nil {
+			newSlots := make([]*TemplateSlot, 0, len(template.ColorTimes))
+			for _, slot := range template.ColorTimes {
+				newSlot := *slot
+				newSlots = append(newSlots, &newSlot)
+			}
+
+			newColorTime := &ColorTime{
+				ID:        primitive.NewObjectID(),
+				Date:      startDate,
+				TopicID:   nil,
+				TimeSlots: newSlots,
+				CreatedBy: userID,
+				CreatedAt: time.Now(),
+				UpdatedAt: time.Now(),
+			}
+
+			if err := s.ColorTimeRepository.CreateColorTime(ctx, newColorTime); err != nil {
+				return err
+			}
+		} else {
+			// existing := colortime.ColorTimes
+			// for _, tmplSlot := range template.ColorTimes {
+			// 	overwritten := false
+			// 	for i, existSlot := range existing {
+			// 		if tmplSlot.StartTime.Before(existSlot.EndTime) && tmplSlot.EndTime.After(existSlot.StartTime) {
+			// 			existing[i] = tmplSlot
+			// 			overwritten = true
+			// 			break
+			// 		}
+			// 	}
+			// 	if !overwritten {
+			// 		existing = append(existing, tmplSlot)
+			// 	}
+			// }
+
+			// colortime.ColorTimes = existing
+			// colortime.UpdatedAt = time.Now()
+
+			// if err := s.ColorTimeRepository.UpdateColorTime(ctx, colortime.ID, colortime); err != nil {
+			// 	return err
+			// }
+			for _, tmplSlot := range template.ColorTimes {
+				newSlot := *tmplSlot
+				colortime.TimeSlots = append(colortime.TimeSlots, &newSlot)
+			}
+
+			colortime.UpdatedAt = time.Now()
+
+			if err := s.ColorTimeRepository.UpdateColorTime(ctx, colortime.ID, colortime); err != nil {
+				return err
+			}
+
+		}
+		startDate = startDate.AddDate(0, 0, 1)
+	}
+
+	return nil
+}
+
+func (s *colorTimeService) AddTopicToColorTimeWeek(ctx context.Context, req *AddTopicToColorTimeWeekRequest, userID string) error {
+
+	if req.TopicID == "" {
+		return errors.New("topic id is required")
+	}
+
+	if req.Owner == nil {
+		return errors.New("owner is required")
+	}
+
+	if req.OrganizationID == "" {
+		return errors.New("organization id is required")
+	}
+
+	if req.StartDate == "" {
+		return errors.New("start date is required")
+	}
+
+	if userID == "" {
+		return errors.New("user id is required")
+	}
+
+	if req.EndDate == "" {
+		return errors.New("end date is required")
+	}
+
+	startDate, err := time.Parse("2006-01-02", req.StartDate)
+	if err != nil {
+		return err
+	}
+
+	endDate, err := time.Parse("2006-01-02", req.EndDate)
+	if err != nil {
+		return err
+	}
+
+	colortimeWeek, err := s.ColorTimeRepository.GetColorTimeWeek(ctx, &startDate, &endDate, req.OrganizationID, req.Owner.OwnerID)
+	if err != nil {
+		return err
+	}
+
+	if colortimeWeek == nil {
+		newColorTimeWeek := &WeekColorTime{
+			ID:             primitive.NewObjectID(),
+			OrganizationID: req.OrganizationID,
+			Owner:          req.Owner,
+			StartDate:      startDate,
+			EndDate:        endDate,
+			TopicID:        &req.TopicID,
+			ColorTimes:     make([]*TemplateSlot, 0),
+			CreatedBy:      userID,
+			CreatedAt:      time.Now(),
+			UpdatedAt:      time.Now(),
+		}
+		if err := s.ColorTimeRepository.CreateColorTimeWeek(ctx, newColorTimeWeek); err != nil {
+			return err
+		}
+	} else {
+		colortimeWeek.TopicID = &req.TopicID
+		colortimeWeek.UpdatedAt = time.Now()
+		if err := s.ColorTimeRepository.UpdateColorTimeWeek(ctx, colortimeWeek.ID, colortimeWeek); err != nil {
+			return err
+		}
+	}
+
+	return nil
 
 }
 
-func getWeekRange(baseDate time.Time) (time.Time, time.Time) {
+func (s *colorTimeService) DeleteTopicToColorTimeWeek(ctx context.Context, req *DeleteTopicToColorTimeWeekRequest, userID string) error {
 
-	weekday := int(baseDate.Weekday())
-	if weekday == 0 {
-		weekday = 7
+	if req.Owner == nil {
+		return errors.New("owner is required")
 	}
 
-	startOfWeek := baseDate.AddDate(0, 0, -weekday+1)
-	startOfWeek = time.Date(startOfWeek.Year(), startOfWeek.Month(), startOfWeek.Day(), 0, 0, 0, 0, baseDate.Location())
-
-	endOfWeek := startOfWeek.AddDate(0, 0, 6)
-	endOfWeek = time.Date(endOfWeek.Year(), endOfWeek.Month(), endOfWeek.Day(), 23, 59, 59, 0, baseDate.Location())
-
-	return startOfWeek, endOfWeek
-
-}
-
-func parseTimeRange(tr string) (time.Time, time.Time, error) {
-
-	parts := strings.Split(tr, "-")
-	if len(parts) != 2 {
-		return time.Time{}, time.Time{}, errors.New("invalid time range")
+	if req.OrganizationID == "" {
+		return errors.New("organization id is required")
 	}
 
-	layout := "15:04"
-
-	startT, err1 := time.Parse(layout, parts[0])
-	endT, err2 := time.Parse(layout, parts[1])
-	if err1 != nil || err2 != nil {
-		return time.Time{}, time.Time{}, errors.New("invalid time format")
+	if req.StartDate == "" {
+		return errors.New("start date is required")
 	}
 
-	start := time.Date(1970, 1, 1, startT.Hour(), startT.Minute(), 0, 0, time.UTC)
+	if userID == "" {
+		return errors.New("user id is required")
+	}
 
-	end := time.Date(1970, 1, 1, endT.Hour(), endT.Minute(), 59, 0, time.UTC)
+	if req.EndDate == "" {
+		return errors.New("end date is required")
+	}
 
-	return start, end, nil
+	startDate, err := time.Parse("2006-01-02", req.StartDate)
+	if err != nil {
+		return err
+	}
 
+	endDate, err := time.Parse("2006-01-02", req.EndDate)
+	if err != nil {
+		return err
+	}
+
+	colortimeWeek, err := s.ColorTimeRepository.GetColorTimeWeek(ctx, &startDate, &endDate, req.OrganizationID, req.Owner.OwnerID)
+	if err != nil {
+		return err
+	}
+
+	if colortimeWeek == nil {
+		return fmt.Errorf("color time week not found")
+	} else {
+		colortimeWeek.TopicID = nil
+		colortimeWeek.UpdatedAt = time.Now()
+		if err := s.ColorTimeRepository.UpdateColorTimeWeek(ctx, colortimeWeek.ID, colortimeWeek); err != nil {
+			return err
+		}
+	}
+
+	return nil
+	
 }
