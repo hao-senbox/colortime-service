@@ -3,6 +3,7 @@ package colortime
 import (
 	"colortime-service/internal/language"
 	"colortime-service/internal/product"
+	"colortime-service/internal/topic"
 	"colortime-service/internal/user"
 	"context"
 	"errors"
@@ -21,6 +22,7 @@ type ColorTimeService interface {
 	UpdateColorTime(ctx context.Context, req *UpdateColorTimeRequest, id string) error
 	DeleteColorTime(ctx context.Context, req *DeleteColorTimeRequest, id string) error
 	AddTopicToColorTimeWeek(ctx context.Context, req *AddTopicToColorTimeWeekRequest, userID string) error
+	GetTopicToColorTimeWeek(ctx context.Context, userID, orgID, start, end string) (*TopicToColorTimeWeekResponse, error)
 	DeleteTopicToColorTimeWeek(ctx context.Context, req *DeleteTopicToColorTimeWeekRequest, userID string) error
 
 	CreateTemplateColorTime(ctx context.Context, req *CreateTemplateColorTimeRequest, userID string) error
@@ -38,17 +40,20 @@ type colorTimeService struct {
 	ProductService      product.ProductService
 	LanguageService     language.MessageLanguageGateway
 	UserService         user.UserService
+	TopicService        topic.TopicService
 }
 
 func NewColorTimeService(colorTimeRepository ColorTimeRepository,
 	productService product.ProductService,
 	languageService language.MessageLanguageGateway,
-	userService user.UserService) ColorTimeService {
+	userService user.UserService,
+	topicService topic.TopicService) ColorTimeService {
 	return &colorTimeService{
 		ColorTimeRepository: colorTimeRepository,
 		ProductService:      productService,
 		LanguageService:     languageService,
 		UserService:         userService,
+		TopicService:        topicService,
 	}
 }
 
@@ -828,6 +833,76 @@ func (s *colorTimeService) AddTopicToColorTimeWeek(ctx context.Context, req *Add
 
 }
 
+func (s *colorTimeService) GetTopicToColorTimeWeek(ctx context.Context, userID, orgID, start, end string) (*TopicToColorTimeWeekResponse, error) {
+
+	if userID == "" {
+		return nil, errors.New("user id is required")
+	}
+
+	if orgID == "" {
+		return nil, errors.New("organization id is required")
+	}
+
+	if start == "" {
+		return nil, errors.New("start date is required")
+	}
+
+	if end == "" {
+		return nil, errors.New("end date is required")
+	}
+
+	startDate, err := time.Parse("2006-01-02", start)
+	if err != nil {
+		return nil, err
+	}
+
+	endDate, err := time.Parse("2006-01-02", end)
+	if err != nil {
+		return nil, err
+	}
+
+	colortimeWeek, err := s.ColorTimeRepository.GetColorTimeWeek(ctx, &startDate, &endDate, orgID, userID)
+	if err != nil {
+		return nil, err
+	}
+
+	if colortimeWeek == nil {
+		return nil, nil
+	}
+
+	var topicResult Topic
+
+	if colortimeWeek.TopicID != nil && *colortimeWeek.TopicID != "" {
+		topic, err := s.TopicService.GetTopicInfor(ctx, *colortimeWeek.TopicID)
+		if err != nil {
+			return nil, err
+		}
+
+		if topic != nil {
+			topicResult = Topic{
+				ID:   topic.ID,
+				Name: topic.Name,
+			}
+		}
+	}
+
+	result := TopicToColorTimeWeekResponse{
+		ID:             colortimeWeek.ID,
+		OrganizationID: colortimeWeek.OrganizationID,
+		Owner:          colortimeWeek.Owner,
+		StartDate:      colortimeWeek.StartDate,
+		EndDate:        colortimeWeek.EndDate,
+		Topic:          topicResult,
+		ColorTimes:     colortimeWeek.ColorTimes,
+		CreatedBy:      colortimeWeek.CreatedBy,
+		CreatedAt:      colortimeWeek.CreatedAt,
+		UpdatedAt:      colortimeWeek.UpdatedAt,
+	}
+
+	return &result, nil
+}
+
+
 func (s *colorTimeService) DeleteTopicToColorTimeWeek(ctx context.Context, req *DeleteTopicToColorTimeWeekRequest, userID string) error {
 
 	if req.Owner == nil {
@@ -876,5 +951,5 @@ func (s *colorTimeService) DeleteTopicToColorTimeWeek(ctx context.Context, req *
 	}
 
 	return nil
-	
+
 }

@@ -5,6 +5,7 @@ import (
 	"colortime-service/internal/colortime"
 	"colortime-service/internal/language"
 	"colortime-service/internal/product"
+	"colortime-service/internal/topic"
 	"colortime-service/internal/user"
 	"colortime-service/pkg/consul"
 	"colortime-service/pkg/zap"
@@ -53,11 +54,13 @@ func main() {
 	productService := product.NewUserService(consulClient)
 	languageService := language.NewLanguageService(consulClient)
 	userService := user.NewUserService(consulClient)
+	topicService := topic.NewTopicService(consulClient)
+
 	colorTimeCollection := mongoClient.Database(cfg.MongoDB).Collection("colortime")
 	colorTimeTemplateCollection := mongoClient.Database(cfg.MongoDB).Collection("colortime_template")
 
 	colorTimeRepository := colortime.NewColorTimeRepository(colorTimeCollection, colorTimeTemplateCollection)
-	colorTimeService := colortime.NewColorTimeService(colorTimeRepository, productService, languageService, userService)
+	colorTimeService := colortime.NewColorTimeService(colorTimeRepository, productService, languageService, userService, topicService)
 	colorTimeHandler := colortime.NewColorTimeHandler(colorTimeService)
 	router := gin.Default()
 

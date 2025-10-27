@@ -114,7 +114,7 @@ func (h *ColorTimeHandler) GetColorTimes(c *gin.Context) {
 
 func (h *ColorTimeHandler) GetColorTime(c *gin.Context) {
 
-	id := c.Param("id")
+	id := c.Query("id")
 	if id == "" {
 		helper.SendError(c, http.StatusBadRequest, errors.New("invalid request parameters"), nil)
 		return
@@ -464,6 +464,51 @@ func (h *ColorTimeHandler) AddTopicToColorTimeWeek(c *gin.Context) {
 
 }
 
+func (h *ColorTimeHandler) GetTopicToColorTimeWeek(c *gin.Context) {
+
+	userID := c.Query("user_id")
+	if userID == "" {
+		helper.SendError(c, http.StatusBadRequest, errors.New("invalid request parameters"), nil)
+		return
+	}
+
+	orgID := c.Query("org_id")
+	if orgID == "" {
+		helper.SendError(c, http.StatusBadRequest, errors.New("invalid request parameters"), nil)
+		return
+	}
+
+	start := c.Query("start")
+	if start == "" {
+		helper.SendError(c, http.StatusBadRequest, errors.New("invalid request parameters"), nil)
+		return
+	}
+
+	end := c.Query("end")
+	if end == "" {
+		helper.SendError(c, http.StatusBadRequest, errors.New("invalid request parameters"), nil)
+		return
+	}
+
+	token, exists := c.Get(constants.Token)
+	if !exists {
+		helper.SendError(c, 400, fmt.Errorf("token not found"), nil)
+		return
+	}
+
+	ctx := context.WithValue(c, constants.TokenKey, token)
+
+	data, err := h.ColorTimeService.GetTopicToColorTimeWeek(ctx, userID, orgID, start, end)
+
+	if err != nil {
+		helper.SendError(c, http.StatusBadRequest, err, nil)
+		return
+	}
+
+	helper.SendSuccess(c, http.StatusOK, "topic to color time week fetched successfully", data)
+
+}
+
 func (h *ColorTimeHandler) DeleteTopicToColorTimeWeek(c *gin.Context) {
 
 	var req DeleteTopicToColorTimeWeekRequest
@@ -495,5 +540,5 @@ func (h *ColorTimeHandler) DeleteTopicToColorTimeWeek(c *gin.Context) {
 	}
 
 	helper.SendSuccess(c, http.StatusOK, "topic deleted from color time week successfully", nil)
-	
+
 }
