@@ -16,7 +16,8 @@ type ColorTimeRepository interface {
 	GetColorTimeByDate(ctx context.Context, organizationID string, date time.Time) (*ColorTime, error)
 	UpdateColorTime(ctx context.Context, id primitive.ObjectID, colortime *ColorTime) error
 	CreateColorTimeWeek(ctx context.Context, colortimeWeek *WeekColorTime) error
-	GetColorTimeWeek(ctx context.Context, startDate, endDate *time.Time, organizationID, userID string) (*WeekColorTime, error)
+	GetColorTimeWeek(ctx context.Context, startDate, endDate *time.Time, organizationID, userID, role string) (*WeekColorTime, error)
+	GetColorTimeWeekByID(ctx context.Context, id primitive.ObjectID) (*WeekColorTime, error)
 	UpdateColorTimeWeek(ctx context.Context, id primitive.ObjectID, colortimeWeek *WeekColorTime) error
 
 	CreateTemplateColorTime(ctx context.Context, template *ColorTimeTemplate) error
@@ -126,18 +127,34 @@ func (r *colorTimeRepository) CreateColorTimeWeek(ctx context.Context, colortime
 	return err
 }
 
-func (r *colorTimeRepository) GetColorTimeWeek(ctx context.Context, startDate, endDate *time.Time, organizationID, userID string) (*WeekColorTime, error) {
+func (r *colorTimeRepository) GetColorTimeWeek(ctx context.Context, startDate, endDate *time.Time, organizationID, userID, role string) (*WeekColorTime, error) {
 
 	filter := bson.M{
-		"organization_id": organizationID,
-		"owner.owner_id":  userID,
-		"start_date":      startDate,
-		"end_date":        endDate,
+		"organization_id":  organizationID,
+		"owner.owner_id":   userID,
+		"owner.owner_role": role, 
+		"start_date":       bson.M{"$lte": endDate},
+		"end_date":         bson.M{"$gte": startDate},
 	}
 
 	var colortimeWeek WeekColorTime
 
 	if err := r.ColorTimeCollection.FindOne(ctx, filter).Decode(&colortimeWeek); err != nil {
+		if err == mongo.ErrNoDocuments {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	return &colortimeWeek, nil
+
+}
+
+func (r *colorTimeRepository) GetColorTimeWeekByID(ctx context.Context, id primitive.ObjectID) (*WeekColorTime, error) {
+
+	var colortimeWeek WeekColorTime
+
+	if err := r.ColorTimeCollection.FindOne(ctx, bson.M{"_id": id}).Decode(&colortimeWeek); err != nil {
 		if err == mongo.ErrNoDocuments {
 			return nil, nil
 		}

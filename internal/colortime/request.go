@@ -69,16 +69,14 @@ type ApplyTemplateColorTimeRequest struct {
 }
 
 type AddTopicToColorTimeWeekRequest struct {
-	Owner          *Owner `json:"owner" bson:"owner"`
-	OrganizationID string `bson:"organization_id" json:"organization_id"`
-	TopicID        string `json:"topic_id" bson:"topic_id"`
-	StartDate      string `json:"start_date"`
-	EndDate        string `json:"end_date"`
+	TopicID string `json:"topic_id" bson:"topic_id"`
 }
 
-type DeleteTopicToColorTimeWeekRequest struct {
-	Owner          *Owner `json:"owner" bson:"owner"`
-	OrganizationID string `bson:"organization_id" json:"organization_id"`
-	StartDate      string `json:"start_date"`
-	EndDate        string `json:"end_date"`
+type AddTopicToColorTimeDayRequest struct {
+	Date    string `json:"date" binding:"required"`
+	TopicID string `json:"topic_id" binding:"required"`
+}
+
+type DeleteTopicToColorTimeDayRequest struct {
+	Date string `json:"date" binding:"required"`
 }

@@ -13,7 +13,7 @@ type WeekColorTime struct {
 	StartDate      time.Time          `bson:"start_date" json:"start_date"`
 	EndDate        time.Time          `bson:"end_date" json:"end_date"`
 	TopicID        *string            `bson:"topic_id" json:"topic_id"`
-	ColorTimes     []*TemplateSlot    `bson:"time_slots" json:"time_slots"`
+	ColorTimes     []*ColorTime       `bson:"colortimes" json:"colortimes"`
 	CreatedBy      string             `bson:"created_by" json:"created_by"`
 	CreatedAt      time.Time          `bson:"created_at" json:"created_at"`
 	UpdatedAt      time.Time          `bson:"updated_at" json:"updated_at"`
@@ -24,7 +24,6 @@ type ColorTime struct {
 	Date      time.Time          `bson:"date" json:"date"`
 	TopicID   *string            `bson:"topic_id" json:"topic_id"`
 	TimeSlots []*TemplateSlot    `bson:"time_slots" json:"time_slots"`
-	CreatedBy string             `bson:"created_by" json:"created_by"`
 	CreatedAt time.Time          `bson:"created_at" json:"created_at"`
 	UpdatedAt time.Time          `bson:"updated_at" json:"updated_at"`
 }

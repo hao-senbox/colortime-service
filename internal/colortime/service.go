@@ -21,13 +21,15 @@ type ColorTimeService interface {
 	GetColorTime(ctx context.Context, id string) (*ColorTime, error)
 	UpdateColorTime(ctx context.Context, req *UpdateColorTimeRequest, id string) error
 	DeleteColorTime(ctx context.Context, req *DeleteColorTimeRequest, id string) error
-	AddTopicToColorTimeWeek(ctx context.Context, req *AddTopicToColorTimeWeekRequest, userID string) error
-	GetTopicToColorTimeWeek(ctx context.Context, userID, orgID, start, end string) (*TopicToColorTimeWeekResponse, error)
-	DeleteTopicToColorTimeWeek(ctx context.Context, req *DeleteTopicToColorTimeWeekRequest, userID string) error
+	AddTopicToColorTimeWeek(ctx context.Context, id string, req *AddTopicToColorTimeWeekRequest, userID string) error
+	GetColorTimeWeek(ctx context.Context, userID, role, orgID, start, end string) (*TopicToColorTimeWeekResponse, error)
+	DeleteTopicToColorTimeWeek(ctx context.Context, id string) error
+	AddTopicToColorTimeDay(ctx context.Context, id string, req *AddTopicToColorTimeDayRequest) error
+	DeleteTopicToColorTimeDay(ctx context.Context, id string, req *DeleteTopicToColorTimeDayRequest) error
 
 	CreateTemplateColorTime(ctx context.Context, req *CreateTemplateColorTimeRequest, userID string) error
 	GetTemplateColorTimes(ctx context.Context) ([]*ColorTimeTemplate, error)
-	GetTemplateColorTime(ctx context.Context, id string) (*ColorTimeTemplate, error)
+	GetTemplateColorTime(ctx context.Context, id string) (*ColorTimeTemplate, error)	
 	UpdateTemplateColorTime(ctx context.Context, req *UpdateTemplateColorTimeRequest, id string) error
 	DeleteTemplateColorTime(ctx context.Context, id string) error
 	AddSlotsToTemplateColorTime(ctx context.Context, req *AddSlotsToTemplateColorTimeRequest, id string) error
@@ -144,7 +146,6 @@ func (s *colorTimeService) CreateColorTime(ctx context.Context, req *CreateColor
 					ProductID: product_id,
 				},
 			},
-			CreatedBy: userID,
 			CreatedAt: time.Now(),
 			UpdatedAt: time.Now(),
 		}
@@ -716,7 +717,6 @@ func (s *colorTimeService) ApplyTemplateColorTime(ctx context.Context, req *Appl
 				Date:      startDate,
 				TopicID:   nil,
 				TimeSlots: newSlots,
-				CreatedBy: userID,
 				CreatedAt: time.Now(),
 				UpdatedAt: time.Now(),
 			}
@@ -764,178 +764,163 @@ func (s *colorTimeService) ApplyTemplateColorTime(ctx context.Context, req *Appl
 	return nil
 }
 
-func (s *colorTimeService) AddTopicToColorTimeWeek(ctx context.Context, req *AddTopicToColorTimeWeekRequest, userID string) error {
-
-	if req.TopicID == "" {
-		return errors.New("topic id is required")
-	}
-
-	if req.Owner == nil {
-		return errors.New("owner is required")
-	}
-
-	if req.OrganizationID == "" {
-		return errors.New("organization id is required")
-	}
-
-	if req.StartDate == "" {
-		return errors.New("start date is required")
-	}
+func (s *colorTimeService) AddTopicToColorTimeWeek(ctx context.Context, id string, req *AddTopicToColorTimeWeekRequest, userID string) error {
 
 	if userID == "" {
 		return errors.New("user id is required")
 	}
 
-	if req.EndDate == "" {
-		return errors.New("end date is required")
+	if req.TopicID == "" {
+		return errors.New("topic id is required")
 	}
 
-	startDate, err := time.Parse("2006-01-02", req.StartDate)
+	objectID, err := primitive.ObjectIDFromHex(id)
 	if err != nil {
-		return err
+		return errors.New("invalid id format")
 	}
 
-	endDate, err := time.Parse("2006-01-02", req.EndDate)
-	if err != nil {
-		return err
-	}
-
-	colortimeWeek, err := s.ColorTimeRepository.GetColorTimeWeek(ctx, &startDate, &endDate, req.OrganizationID, req.Owner.OwnerID)
+	colortimeWeek, err := s.ColorTimeRepository.GetColorTimeWeekByID(ctx, objectID)
 	if err != nil {
 		return err
 	}
 
 	if colortimeWeek == nil {
-		newColorTimeWeek := &WeekColorTime{
-			ID:             primitive.NewObjectID(),
-			OrganizationID: req.OrganizationID,
-			Owner:          req.Owner,
-			StartDate:      startDate,
-			EndDate:        endDate,
-			TopicID:        &req.TopicID,
-			ColorTimes:     make([]*TemplateSlot, 0),
-			CreatedBy:      userID,
-			CreatedAt:      time.Now(),
-			UpdatedAt:      time.Now(),
-		}
-		if err := s.ColorTimeRepository.CreateColorTimeWeek(ctx, newColorTimeWeek); err != nil {
-			return err
-		}
-	} else {
-		colortimeWeek.TopicID = &req.TopicID
-		colortimeWeek.UpdatedAt = time.Now()
-		if err := s.ColorTimeRepository.UpdateColorTimeWeek(ctx, colortimeWeek.ID, colortimeWeek); err != nil {
-			return err
-		}
+		return fmt.Errorf("color time week not found")
+	}
+
+	colortimeWeek.TopicID = &req.TopicID
+	colortimeWeek.UpdatedAt = time.Now()
+
+	if err := s.ColorTimeRepository.UpdateColorTimeWeek(ctx, colortimeWeek.ID, colortimeWeek); err != nil {
+		return err
 	}
 
 	return nil
 
 }
 
-func (s *colorTimeService) GetTopicToColorTimeWeek(ctx context.Context, userID, orgID, start, end string) (*TopicToColorTimeWeekResponse, error) {
+func (s *colorTimeService) GetColorTimeWeek(ctx context.Context, userID, role, orgID, start, end string) (*TopicToColorTimeWeekResponse, error) {
 
 	if userID == "" {
 		return nil, errors.New("user id is required")
+	}
+
+	if role == "" {
+		return nil, errors.New("role is required")
 	}
 
 	if orgID == "" {
 		return nil, errors.New("organization id is required")
 	}
 
-	if start == "" {
-		return nil, errors.New("start date is required")
-	}
-
-	if end == "" {
-		return nil, errors.New("end date is required")
+	if start == "" || end == "" {
+		return nil, errors.New("start and end date are required")
 	}
 
 	startDate, err := time.Parse("2006-01-02", start)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("invalid start date: %w", err)
 	}
 
 	endDate, err := time.Parse("2006-01-02", end)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("invalid end date: %w", err)
 	}
 
-	colortimeWeek, err := s.ColorTimeRepository.GetColorTimeWeek(ctx, &startDate, &endDate, orgID, userID)
+	colortimeWeek, err := s.ColorTimeRepository.GetColorTimeWeek(ctx, &startDate, &endDate, orgID, userID, role)
 	if err != nil {
 		return nil, err
 	}
 
 	if colortimeWeek == nil {
-		return nil, nil
+		owner := &Owner{
+			OwnerID:   userID,
+			OwnerRole: role,
+		}
+		newColorTimeWeek := &WeekColorTime{
+			ID:             primitive.NewObjectID(),
+			OrganizationID: orgID,
+			Owner:          owner,
+			StartDate:      startDate,
+			EndDate:        endDate,
+			TopicID:        nil,
+			ColorTimes:     []*ColorTime{},
+			CreatedBy:      userID,
+			CreatedAt:      time.Now(),
+			UpdatedAt:      time.Now(),
+		}
+
+		if err := s.ColorTimeRepository.CreateColorTimeWeek(ctx, newColorTimeWeek); err != nil {
+			return nil, err
+		}
+		colortimeWeek = newColorTimeWeek
 	}
 
-	var topicResult Topic
-
+	var weekTopic Topic
 	if colortimeWeek.TopicID != nil && *colortimeWeek.TopicID != "" {
 		topic, err := s.TopicService.GetTopicInfor(ctx, *colortimeWeek.TopicID)
 		if err != nil {
 			return nil, err
 		}
-
 		if topic != nil {
-			topicResult = Topic{
+			weekTopic = Topic{
 				ID:   topic.ID,
 				Name: topic.Name,
 			}
 		}
 	}
 
-	result := TopicToColorTimeWeekResponse{
+	colorTimeResponses := make([]*ColorTimeResponse, 0, len(colortimeWeek.ColorTimes))
+
+	for _, day := range colortimeWeek.ColorTimes {
+		var dayTopic Topic
+		if day.TopicID != nil && *day.TopicID != "" {
+			topic, err := s.TopicService.GetTopicInfor(ctx, *day.TopicID)
+			if err != nil {
+				return nil, fmt.Errorf("failed to fetch topic for day %v: %w", day.Date, err)
+			}
+			if topic != nil {
+				dayTopic = Topic{
+					ID:   topic.ID,
+					Name: topic.Name,
+				}
+			}
+		}
+
+		colorTimeResponses = append(colorTimeResponses, &ColorTimeResponse{
+			ID:        day.ID,
+			Date:      day.Date,
+			Topic:     dayTopic,
+			TimeSlots: day.TimeSlots,
+			CreatedAt: day.CreatedAt,
+			UpdatedAt: day.UpdatedAt,
+		})
+	}
+
+	result := &TopicToColorTimeWeekResponse{
 		ID:             colortimeWeek.ID,
 		OrganizationID: colortimeWeek.OrganizationID,
 		Owner:          colortimeWeek.Owner,
 		StartDate:      colortimeWeek.StartDate,
 		EndDate:        colortimeWeek.EndDate,
-		Topic:          topicResult,
-		ColorTimes:     colortimeWeek.ColorTimes,
+		Topic:          weekTopic,
+		ColorTimes:     colorTimeResponses,
 		CreatedBy:      colortimeWeek.CreatedBy,
 		CreatedAt:      colortimeWeek.CreatedAt,
 		UpdatedAt:      colortimeWeek.UpdatedAt,
 	}
 
-	return &result, nil
+	return result, nil
 }
 
+func (s *colorTimeService) DeleteTopicToColorTimeWeek(ctx context.Context, id string) error {
 
-func (s *colorTimeService) DeleteTopicToColorTimeWeek(ctx context.Context, req *DeleteTopicToColorTimeWeekRequest, userID string) error {
-
-	if req.Owner == nil {
-		return errors.New("owner is required")
-	}
-
-	if req.OrganizationID == "" {
-		return errors.New("organization id is required")
-	}
-
-	if req.StartDate == "" {
-		return errors.New("start date is required")
-	}
-
-	if userID == "" {
-		return errors.New("user id is required")
-	}
-
-	if req.EndDate == "" {
-		return errors.New("end date is required")
-	}
-
-	startDate, err := time.Parse("2006-01-02", req.StartDate)
+	objectID, err := primitive.ObjectIDFromHex(id)
 	if err != nil {
-		return err
+		return errors.New("invalid id format")
 	}
 
-	endDate, err := time.Parse("2006-01-02", req.EndDate)
-	if err != nil {
-		return err
-	}
-
-	colortimeWeek, err := s.ColorTimeRepository.GetColorTimeWeek(ctx, &startDate, &endDate, req.OrganizationID, req.Owner.OwnerID)
+	colortimeWeek, err := s.ColorTimeRepository.GetColorTimeWeekByID(ctx, objectID)
 	if err != nil {
 		return err
 	}
@@ -952,4 +937,108 @@ func (s *colorTimeService) DeleteTopicToColorTimeWeek(ctx context.Context, req *
 
 	return nil
 
+}
+
+func (s *colorTimeService) AddTopicToColorTimeDay(ctx context.Context, id string, req *AddTopicToColorTimeDayRequest) error {
+
+	objectID, err := primitive.ObjectIDFromHex(id)
+	if err != nil {
+		return errors.New("invalid id format")
+	}
+
+	if req.Date == "" {
+		return fmt.Errorf("date is required")
+	}
+
+	dateParse, err := time.Parse("2006-01-02", req.Date)
+	if err != nil {
+		return err
+	}
+
+	if req.TopicID == "" {
+		return fmt.Errorf("topic id is required")
+	}
+
+	week, err := s.ColorTimeRepository.GetColorTimeWeekByID(ctx, objectID)
+	if err != nil {
+		return err
+	}
+
+	if week == nil {
+		return fmt.Errorf("color time day not found")
+	}
+
+	found := false
+	for _, day := range week.ColorTimes {
+		if sameDay(day.Date, dateParse) {
+			day.TopicID = &req.TopicID
+			day.UpdatedAt = time.Now()
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		week.ColorTimes = append(week.ColorTimes, &ColorTime{
+			ID:        primitive.NewObjectID(),
+			Date:      dateParse,
+			TopicID:   &req.TopicID,
+			TimeSlots: []*TemplateSlot{},
+			CreatedAt: time.Now(),
+			UpdatedAt: time.Now(),
+		})
+	}
+
+	week.UpdatedAt = time.Now()
+	return s.ColorTimeRepository.UpdateColorTimeWeek(ctx, week.ID, week)
+
+}
+
+func (s *colorTimeService) DeleteTopicToColorTimeDay(ctx context.Context, id string, req *DeleteTopicToColorTimeDayRequest) error {
+
+	objectID, err := primitive.ObjectIDFromHex(id)
+	if err != nil {
+		return errors.New("invalid id format")
+	}
+
+	if req.Date == "" {
+		return fmt.Errorf("date is required")
+	}
+
+	dateParse, err := time.Parse("2006-01-02", req.Date)
+	if err != nil {
+		return fmt.Errorf("invalid date format: %w", err)
+	}
+
+	week, err := s.ColorTimeRepository.GetColorTimeWeekByID(ctx, objectID)
+	if err != nil {
+		return err
+	}
+
+	if week == nil {
+		return fmt.Errorf("week not found")
+	}
+
+	found := false
+	for i := range week.ColorTimes {
+		if sameDay(week.ColorTimes[i].Date, dateParse) {
+			week.ColorTimes[i].TopicID = nil
+			week.ColorTimes[i].UpdatedAt = time.Now()
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		return fmt.Errorf("color time day not found")
+	}
+
+	week.UpdatedAt = time.Now()
+	return s.ColorTimeRepository.UpdateColorTimeWeek(ctx, week.ID, week)
+}
+
+func sameDay(a, b time.Time) bool {
+	y1, m1, d1 := a.Date()
+	y2, m2, d2 := b.Date()
+	return y1 == y2 && m1 == m2 && d1 == d2
 }

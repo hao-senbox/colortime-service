@@ -433,9 +433,14 @@ func (h *ColorTimeHandler) ApplyTemplateColorTime(c *gin.Context) {
 func (h *ColorTimeHandler) AddTopicToColorTimeWeek(c *gin.Context) {
 
 	var req AddTopicToColorTimeWeekRequest
-
 	if err := c.ShouldBindJSON(&req); err != nil {
 		helper.SendError(c, http.StatusBadRequest, err, nil)
+		return
+	}
+
+	id := c.Param("id")
+	if id == "" {
+		helper.SendError(c, http.StatusBadRequest, errors.New("invalid request parameters"), nil)
 		return
 	}
 
@@ -453,7 +458,7 @@ func (h *ColorTimeHandler) AddTopicToColorTimeWeek(c *gin.Context) {
 
 	ctx := context.WithValue(c, constants.TokenKey, token)
 
-	err := h.ColorTimeService.AddTopicToColorTimeWeek(ctx, &req, userID.(string))
+	err := h.ColorTimeService.AddTopicToColorTimeWeek(ctx, id, &req, userID.(string))
 
 	if err != nil {
 		helper.SendError(c, http.StatusBadRequest, err, nil)
@@ -464,10 +469,16 @@ func (h *ColorTimeHandler) AddTopicToColorTimeWeek(c *gin.Context) {
 
 }
 
-func (h *ColorTimeHandler) GetTopicToColorTimeWeek(c *gin.Context) {
+func (h *ColorTimeHandler) GetToColorTimeWeek(c *gin.Context) {
 
 	userID := c.Query("user_id")
 	if userID == "" {
+		helper.SendError(c, http.StatusBadRequest, errors.New("invalid request parameters"), nil)
+		return
+	}
+
+	role := c.Query("role")
+	if role == "" {
 		helper.SendError(c, http.StatusBadRequest, errors.New("invalid request parameters"), nil)
 		return
 	}
@@ -498,7 +509,7 @@ func (h *ColorTimeHandler) GetTopicToColorTimeWeek(c *gin.Context) {
 
 	ctx := context.WithValue(c, constants.TokenKey, token)
 
-	data, err := h.ColorTimeService.GetTopicToColorTimeWeek(ctx, userID, orgID, start, end)
+	data, err := h.ColorTimeService.GetColorTimeWeek(ctx, userID, role, orgID, start, end)
 
 	if err != nil {
 		helper.SendError(c, http.StatusBadRequest, err, nil)
@@ -511,16 +522,9 @@ func (h *ColorTimeHandler) GetTopicToColorTimeWeek(c *gin.Context) {
 
 func (h *ColorTimeHandler) DeleteTopicToColorTimeWeek(c *gin.Context) {
 
-	var req DeleteTopicToColorTimeWeekRequest
-
-	if err := c.ShouldBindJSON(&req); err != nil {
-		helper.SendError(c, http.StatusBadRequest, err, nil)
-		return
-	}
-
-	userID, exists := c.Get(constants.UserID)
-	if !exists {
-		helper.SendError(c, 400, fmt.Errorf("user_id not found"), nil)
+	id := c.Param("id")
+	if id == "" {
+		helper.SendError(c, http.StatusBadRequest, errors.New("invalid request parameters"), nil)
 		return
 	}
 
@@ -532,7 +536,7 @@ func (h *ColorTimeHandler) DeleteTopicToColorTimeWeek(c *gin.Context) {
 
 	ctx := context.WithValue(c, constants.TokenKey, token)
 
-	err := h.ColorTimeService.DeleteTopicToColorTimeWeek(ctx, &req, userID.(string))
+	err := h.ColorTimeService.DeleteTopicToColorTimeWeek(ctx, id)
 
 	if err != nil {
 		helper.SendError(c, http.StatusBadRequest, err, nil)
@@ -541,4 +545,70 @@ func (h *ColorTimeHandler) DeleteTopicToColorTimeWeek(c *gin.Context) {
 
 	helper.SendSuccess(c, http.StatusOK, "topic deleted from color time week successfully", nil)
 
+}
+
+func (h *ColorTimeHandler) AddTopicToColorTimeDay(c *gin.Context) {
+	
+	var req AddTopicToColorTimeDayRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		helper.SendError(c, http.StatusBadRequest, err, nil)
+		return
+	}
+
+	id := c.Param("id")
+	if id == "" {
+		helper.SendError(c, http.StatusBadRequest, errors.New("invalid request parameters"), nil)
+		return
+	}
+
+	token, exists := c.Get(constants.Token)
+	if !exists {
+		helper.SendError(c, 400, fmt.Errorf("token not found"), nil)
+		return
+	}
+
+	ctx := context.WithValue(c, constants.TokenKey, token)
+
+	err := h.ColorTimeService.AddTopicToColorTimeDay(ctx, id, &req)
+
+	if err != nil {
+		helper.SendError(c, http.StatusBadRequest, err, nil)
+		return
+	}
+
+	helper.SendSuccess(c, http.StatusOK, "topic added to color time day successfully", nil)
+
+}
+
+func (h *ColorTimeHandler) DeleteTopicToColorTimeDay(c *gin.Context) {
+
+	var req DeleteTopicToColorTimeDayRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		helper.SendError(c, http.StatusBadRequest, err, nil)
+		return
+	}
+
+	id := c.Param("id")
+	if id == "" {
+		helper.SendError(c, http.StatusBadRequest, errors.New("invalid request parameters"), nil)
+		return
+	}
+
+	token, exists := c.Get(constants.Token)
+	if !exists {
+		helper.SendError(c, 400, fmt.Errorf("token not found"), nil)
+		return
+	}
+
+	ctx := context.WithValue(c, constants.TokenKey, token)
+
+	err := h.ColorTimeService.DeleteTopicToColorTimeDay(ctx, id, &req)
+
+	if err != nil {
+		helper.SendError(c, http.StatusBadRequest, err, nil)
+		return
+	}
+
+	helper.SendSuccess(c, http.StatusOK, "topic deleted from color time day successfully", nil)
+	
 }

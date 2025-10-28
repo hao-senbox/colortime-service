@@ -116,7 +116,6 @@ func (c *callAPI) getTopicInfor(topicID, token string) (map[string]interface{}, 
 		return nil, err
 	}
 
-	fmt.Printf("res: %v\n", res)
 	var topicData interface{}
 
 	err = json.Unmarshal([]byte(res), &topicData)
