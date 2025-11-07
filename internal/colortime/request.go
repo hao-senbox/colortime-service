@@ -80,3 +80,29 @@ type AddTopicToColorTimeDayRequest struct {
 type DeleteTopicToColorTimeDayRequest struct {
 	Date string `json:"date" binding:"required"`
 }
+
+type CreateColorBlockWithSlotRequest struct {
+	Date           string `json:"date" binding:"required"`
+	StartTime      string `json:"start_time" binding:"required"`
+	Duration       int    `json:"duration" binding:"required"`
+	Title          string `json:"title" binding:"required"`
+	Tracking       string `json:"tracking" binding:"required"`
+	Color          string `json:"color" binding:"required"`
+	Note           string `json:"note"`
+	ProductID      string `json:"product_id"`
+	OrganizationID string `json:"organization_id" binding:"required"`
+	BlockID        string `json:"block_id"`
+}
+
+type AddSlotToColorBlockRequest struct {
+	Date           string `json:"date" binding:"required"`
+	BlockID        string `json:"block_id" binding:"required"`
+	StartTime      string `json:"start_time" binding:"required"`
+	Duration       int    `json:"duration" binding:"required"`
+	Title          string `json:"title" binding:"required"`
+	Tracking       string `json:"tracking" binding:"required"`
+	Color          string `json:"color" binding:"required"`
+	Note           string `json:"note"`
+	ProductID      string `json:"product_id"`
+	OrganizationID string `json:"organization_id" binding:"required"`
+}

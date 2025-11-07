@@ -3,6 +3,7 @@ package main
 import (
 	"colortime-service/config"
 	"colortime-service/internal/colortime"
+	"colortime-service/internal/default_colortime"
 	"colortime-service/internal/language"
 	"colortime-service/internal/product"
 	"colortime-service/internal/topic"
@@ -58,13 +59,20 @@ func main() {
 
 	colorTimeCollection := mongoClient.Database(cfg.MongoDB).Collection("colortime")
 	colorTimeTemplateCollection := mongoClient.Database(cfg.MongoDB).Collection("colortime_template")
+	defaultColorTimeCollection := mongoClient.Database(cfg.MongoDB).Collection("default_colortime")
 
 	colorTimeRepository := colortime.NewColorTimeRepository(colorTimeCollection, colorTimeTemplateCollection)
 	colorTimeService := colortime.NewColorTimeService(colorTimeRepository, productService, languageService, userService, topicService)
 	colorTimeHandler := colortime.NewColorTimeHandler(colorTimeService)
+
+	defaultColorTimeRepository := default_colortime.NewDefaultColorTimeRepository(defaultColorTimeCollection)
+	defaultColorTimeService := default_colortime.NewDefaultColorTimeService(defaultColorTimeRepository, productService, topicService)
+	defaultColorTimeHandler := default_colortime.NewDefaultColorTimeHandler(defaultColorTimeService)
+
 	router := gin.Default()
 
 	colortime.RegisterRoutes(router, colorTimeHandler)
+	default_colortime.RegisterRoutes(router, defaultColorTimeHandler)
 
 	server := &http.Server{
 		Addr:    ":" + cfg.Port,

@@ -1,6 +1,7 @@
 package colortime
 
 import (
+	"colortime-service/internal/user"
 	"time"
 
 	"go.mongodb.org/mongo-driver/bson/primitive"
@@ -10,7 +11,7 @@ type ColorTimeResponse struct {
 	ID        primitive.ObjectID `bson:"_id" json:"id"`
 	Date      time.Time          `bson:"date" json:"date"`
 	Topic     Topic              `bson:"topic" json:"topic"`
-	TimeSlots []*TemplateSlot    `bson:"time_slots" json:"time_slots"`
+	TimeSlots []*ColorBlock      `bson:"time_slots" json:"time_slots"`
 	CreatedAt time.Time          `bson:"created_at" json:"created_at"`
 	UpdatedAt time.Time          `bson:"updated_at" json:"updated_at"`
 }
@@ -18,7 +19,7 @@ type ColorTimeResponse struct {
 type TopicToColorTimeWeekResponse struct {
 	ID             primitive.ObjectID   `bson:"_id" json:"id"`
 	OrganizationID string               `bson:"organization_id" json:"organization_id"`
-	Owner          *Owner               `json:"owner" bson:"owner"`
+	Owner          *user.UserInfor      `json:"owner" bson:"owner"`
 	StartDate      time.Time            `bson:"start_date" json:"start_date"`
 	EndDate        time.Time            `bson:"end_date" json:"end_date"`
 	Topic          Topic                `bson:"topic" json:"topic"`
