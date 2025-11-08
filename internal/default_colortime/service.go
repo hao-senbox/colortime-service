@@ -240,6 +240,10 @@ func (s *defaultColorTimeService) CreateDefaultColorBlockAndSaveSlot(
 		return nil, errors.New("week colortime not found")
 	}
 
+	if dateParse.Before(week.StartDate) || dateParse.After(week.EndDate) {
+		return nil, errors.New("date must be within week range")
+	}
+
 	var colorTimeForDate *DefaultColorTime
 	for _, ct := range week.ColorTimes {
 		if sameDay(ct.Date, dateParse) {
@@ -353,6 +357,10 @@ func (s *defaultColorTimeService) CreateDefaultColorBlockForSession(
 
 	if week == nil {
 		return nil, errors.New("week colortime not found")
+	}
+
+	if dateParse.Before(week.StartDate) || dateParse.After(week.EndDate) {
+		return nil, errors.New("date must be within week range")
 	}
 
 	var colorTimeForDate *DefaultColorTime

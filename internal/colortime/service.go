@@ -1,6 +1,7 @@
 package colortime
 
 import (
+	"colortime-service/internal/default_colortime"
 	"colortime-service/internal/language"
 	"colortime-service/internal/product"
 	"colortime-service/internal/topic"
@@ -22,27 +23,31 @@ type ColorTimeService interface {
 
 	CreateColorBlockAndSaveSlot(ctx context.Context, weekColorTimeID string, req *CreateColorBlockWithSlotRequest, userID string) (*ColorBlock, error)
 	CreateColorBlockForSession(ctx context.Context, weekColorTimeID string, req *CreateColorBlockWithSlotRequest, userID string) (*ColorBlock, error)
+	UpdateColorSlot(ctx context.Context, weekColorTimeID, slotID string, req *UpdateColorSlotRequest, userID string) error
 }
 
 type colorTimeService struct {
-	ColorTimeRepository ColorTimeRepository
-	ProductService      product.ProductService
-	LanguageService     language.MessageLanguageGateway
-	UserService         user.UserService
-	TopicService        topic.TopicService
+	ColorTimeRepository        ColorTimeRepository
+	DefaultColorTimeRepository default_colortime.DefaultColorTimeRepository
+	ProductService             product.ProductService
+	LanguageService            language.MessageLanguageGateway
+	UserService                user.UserService
+	TopicService               topic.TopicService
 }
 
 func NewColorTimeService(colorTimeRepository ColorTimeRepository,
+	defaultColorTimeRepository default_colortime.DefaultColorTimeRepository,
 	productService product.ProductService,
 	languageService language.MessageLanguageGateway,
 	userService user.UserService,
 	topicService topic.TopicService) ColorTimeService {
 	return &colorTimeService{
-		ColorTimeRepository: colorTimeRepository,
-		ProductService:      productService,
-		LanguageService:     languageService,
-		UserService:         userService,
-		TopicService:        topicService,
+		ColorTimeRepository:        colorTimeRepository,
+		DefaultColorTimeRepository: defaultColorTimeRepository,
+		ProductService:             productService,
+		LanguageService:            languageService,
+		UserService:                userService,
+		TopicService:               topicService,
 	}
 }
 
@@ -114,7 +119,20 @@ func (s *colorTimeService) GetColorTimeWeek(ctx context.Context, userID, role, o
 		return nil, err
 	}
 
+	defaultColorTimeWeek, err := s.DefaultColorTimeRepository.GetDefaultColorTimeWeek(ctx, &startDate, &endDate, orgID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get default colortime: %w", err)
+	}
+
 	if colortimeWeek == nil {
+		// If student doesn't have colortime for this week, create one with cloned data
+		var colorTimes []*ColorTime
+		if defaultColorTimeWeek != nil {
+			colorTimes = cloneDefaultColorTimesToColorTimes(defaultColorTimeWeek.ColorTimes)
+		} else {
+			colorTimes = []*ColorTime{}
+		}
+
 		owner := &Owner{
 			OwnerID:   userID,
 			OwnerRole: role,
@@ -126,7 +144,7 @@ func (s *colorTimeService) GetColorTimeWeek(ctx context.Context, userID, role, o
 			StartDate:      startDate,
 			EndDate:        endDate,
 			TopicID:        nil,
-			ColorTimes:     []*ColorTime{},
+			ColorTimes:     colorTimes,
 			CreatedBy:      userID,
 			CreatedAt:      time.Now(),
 			UpdatedAt:      time.Now(),
@@ -136,6 +154,15 @@ func (s *colorTimeService) GetColorTimeWeek(ctx context.Context, userID, role, o
 			return nil, err
 		}
 		colortimeWeek = newColorTimeWeek
+	} else {
+		if defaultColorTimeWeek != nil {
+			updated := syncStudentColorTimeWithDefault(colortimeWeek, defaultColorTimeWeek)
+			if updated {
+				if err := s.ColorTimeRepository.UpdateColorTimeWeek(ctx, colortimeWeek.ID, colortimeWeek); err != nil {
+					return nil, fmt.Errorf("failed to update colortime with synced data: %w", err)
+				}
+			}
+		}
 	}
 
 	var weekTopic Topic
@@ -274,14 +301,7 @@ func (s *colorTimeService) AddTopicToColorTimeDay(ctx context.Context, id string
 	}
 
 	if !found {
-		week.ColorTimes = append(week.ColorTimes, &ColorTime{
-			ID:        primitive.NewObjectID(),
-			Date:      dateParse,
-			TopicID:   &req.TopicID,
-			TimeSlots: []*ColorBlock{},
-			CreatedAt: time.Now(),
-			UpdatedAt: time.Now(),
-		})
+		return fmt.Errorf("color time day not found")
 	}
 
 	week.UpdatedAt = time.Now()
@@ -576,6 +596,7 @@ func (s *colorTimeService) CreateColorBlockForSession(
 		SlotID:    primitive.NewObjectID(),
 		Title:     req.Title,
 		Tracking:  req.Tracking,
+		UseCount:  0,
 		Sessions:  1,
 		StartTime: startTimeParse,
 		EndTime:   endTime,
@@ -625,5 +646,209 @@ func (s *colorTimeService) CreateColorBlockForSession(
 	}
 
 	return targetBlock, nil
-	
+
+}
+
+func cloneDefaultColorTimesToColorTimes(defaultColorTimes []*default_colortime.DefaultColorTime) []*ColorTime {
+	colorTimes := make([]*ColorTime, 0, len(defaultColorTimes))
+
+	for _, defaultDay := range defaultColorTimes {
+		colorBlocks := make([]*ColorBlock, 0, len(defaultDay.TimeSlots))
+
+		for _, defaultBlock := range defaultDay.TimeSlots {
+			colorSlots := make([]*ColortimeSlot, 0, len(defaultBlock.Slots))
+
+			for _, defaultSlot := range defaultBlock.Slots {
+				colorSlot := &ColortimeSlot{
+					SlotID:    primitive.NewObjectID(),
+					Sessions:  defaultSlot.Sessions,
+					Title:     defaultSlot.Title,
+					Tracking:  "",
+					UseCount:  0,
+					StartTime: defaultSlot.StartTime,
+					EndTime:   defaultSlot.EndTime,
+					Duration:  defaultSlot.Duration,
+					Color:     defaultSlot.Color,
+					Note:      defaultSlot.Note,
+					ProductID: nil,
+					CreatedAt: time.Now(),
+					UpdatedAt: time.Now(),
+				}
+				colorSlots = append(colorSlots, colorSlot)
+			}
+
+			colorBlock := &ColorBlock{
+				BlockID: primitive.NewObjectID(),
+				Slots:   colorSlots,
+			}
+			colorBlocks = append(colorBlocks, colorBlock)
+		}
+
+		colorTime := &ColorTime{
+			ID:        primitive.NewObjectID(),
+			Date:      defaultDay.Date,
+			TopicID:   nil,
+			TimeSlots: colorBlocks,
+			CreatedAt: time.Now(),
+			UpdatedAt: time.Now(),
+		}
+		colorTimes = append(colorTimes, colorTime)
+	}
+
+	return colorTimes
+}
+
+func syncStudentColorTimeWithDefault(studentWeek *WeekColorTime, defaultWeek *default_colortime.DefaultWeekColorTime) bool {
+	if studentWeek == nil || defaultWeek == nil {
+		return false
+	}
+
+	updated := false
+
+	studentDateMap := make(map[string]*ColorTime)
+	for _, ct := range studentWeek.ColorTimes {
+		dateKey := ct.Date.Format("2006-01-02")
+		studentDateMap[dateKey] = ct
+	}
+
+	for _, defaultDay := range defaultWeek.ColorTimes {
+		dateKey := defaultDay.Date.Format("2006-01-02")
+		if _, exists := studentDateMap[dateKey]; !exists {
+			clonedDay := &ColorTime{
+				ID:        primitive.NewObjectID(),
+				Date:      defaultDay.Date,
+				TopicID:   nil,
+				TimeSlots: cloneDefaultColorBlocks(defaultDay.TimeSlots),
+				CreatedAt: time.Now(),
+				UpdatedAt: time.Now(),
+			}
+			studentWeek.ColorTimes = append(studentWeek.ColorTimes, clonedDay)
+			updated = true
+		}
+	}
+
+	if updated {
+		studentWeek.UpdatedAt = time.Now()
+	}
+
+	return updated
+}
+
+func cloneDefaultColorBlocks(defaultBlocks []*default_colortime.DefaultColorBlock) []*ColorBlock {
+	colorBlocks := make([]*ColorBlock, 0, len(defaultBlocks))
+
+	for _, defaultBlock := range defaultBlocks {
+		colorSlots := make([]*ColortimeSlot, 0, len(defaultBlock.Slots))
+
+		for _, defaultSlot := range defaultBlock.Slots {
+			colorSlot := &ColortimeSlot{
+				SlotID:    primitive.NewObjectID(),
+				Sessions:  defaultSlot.Sessions,
+				Title:     defaultSlot.Title,
+				Tracking:  "",
+				UseCount:  0,
+				StartTime: defaultSlot.StartTime,
+				EndTime:   defaultSlot.EndTime,
+				Duration:  defaultSlot.Duration,
+				Color:     defaultSlot.Color,
+				Note:      defaultSlot.Note,
+				ProductID: nil,
+				CreatedAt: time.Now(),
+				UpdatedAt: time.Now(),
+			}
+			colorSlots = append(colorSlots, colorSlot)
+		}
+
+		colorBlock := &ColorBlock{
+			BlockID: primitive.NewObjectID(),
+			Slots:   colorSlots,
+		}
+		colorBlocks = append(colorBlocks, colorBlock)
+	}
+
+	return colorBlocks
+}
+
+func (s *colorTimeService) UpdateColorSlot(ctx context.Context, weekColorTimeID, slotID string, req *UpdateColorSlotRequest, userID string) error {
+
+	if userID == "" {
+		return errors.New("user id is required")
+	}
+
+	if req.Tracking == "" {
+		return errors.New("tracking is required")
+	}
+
+	weekObjectID, err := primitive.ObjectIDFromHex(weekColorTimeID)
+	if err != nil {
+		return errors.New("invalid week colortime ID format")
+	}
+
+	slotObjectID, err := primitive.ObjectIDFromHex(slotID)
+	if err != nil {
+		return errors.New("invalid slot ID format")
+	}
+
+	week, err := s.ColorTimeRepository.GetColorTimeWeekByID(ctx, weekObjectID)
+	if err != nil {
+		return fmt.Errorf("failed to get week colortime: %w", err)
+	}
+
+	if week == nil {
+		return errors.New("week colortime not found")
+	}
+
+	// Find target slot in all blocks and days
+	var targetSlot *ColortimeSlot
+	for _, colorTime := range week.ColorTimes {
+		for _, block := range colorTime.TimeSlots {
+			for _, slot := range block.Slots {
+				if slot.SlotID == slotObjectID {
+					targetSlot = slot
+					break
+				}
+			}
+			if targetSlot != nil {
+				break
+			}
+		}
+		if targetSlot != nil {
+			break
+		}
+	}
+
+	if targetSlot == nil {
+		return errors.New("slot not found")
+	}
+
+	// Update product_id
+	targetSlot.ProductID = nil
+	if req.ProductID != "" {
+		targetSlot.ProductID = &req.ProductID
+	}
+
+	// Count how many slots have the same tracking as the new tracking
+	trackingCount := 0
+	for _, colorTime := range week.ColorTimes {
+		for _, block := range colorTime.TimeSlots {
+			for _, slot := range block.Slots {
+				if slot.Tracking == req.Tracking {
+					trackingCount++
+				}
+			}
+		}
+	}
+
+	// Set tracking and use count (number of times this tracking appears)
+	targetSlot.Tracking = req.Tracking
+	targetSlot.UseCount = trackingCount
+
+	targetSlot.UpdatedAt = time.Now()
+	week.UpdatedAt = time.Now()
+
+	if err := s.ColorTimeRepository.UpdateColorTimeWeek(ctx, week.ID, week); err != nil {
+		return fmt.Errorf("failed to update week colortime: %w", err)
+	}
+
+	return nil
 }

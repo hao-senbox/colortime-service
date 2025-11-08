@@ -62,10 +62,10 @@ func main() {
 	defaultColorTimeCollection := mongoClient.Database(cfg.MongoDB).Collection("default_colortime")
 
 	colorTimeRepository := colortime.NewColorTimeRepository(colorTimeCollection, colorTimeTemplateCollection)
-	colorTimeService := colortime.NewColorTimeService(colorTimeRepository, productService, languageService, userService, topicService)
+	defaultColorTimeRepository := default_colortime.NewDefaultColorTimeRepository(defaultColorTimeCollection)
+	colorTimeService := colortime.NewColorTimeService(colorTimeRepository, defaultColorTimeRepository, productService, languageService, userService, topicService)
 	colorTimeHandler := colortime.NewColorTimeHandler(colorTimeService)
 
-	defaultColorTimeRepository := default_colortime.NewDefaultColorTimeRepository(defaultColorTimeCollection)
 	defaultColorTimeService := default_colortime.NewDefaultColorTimeService(defaultColorTimeRepository, productService, topicService)
 	defaultColorTimeHandler := default_colortime.NewDefaultColorTimeHandler(defaultColorTimeService)
 

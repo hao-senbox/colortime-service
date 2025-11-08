@@ -261,3 +261,42 @@ func (h *ColorTimeHandler) CreateColorBlockForSessionHandler(c *gin.Context) {
 
 	helper.SendSuccess(c, http.StatusOK, "color block for session created successfully", colorBlock)
 }
+
+func (h *ColorTimeHandler) UpdateColorSlotHandler(c *gin.Context) {
+	weekColorTimeID := c.Param("week_colortime_id")
+	slotID := c.Param("slot_id")
+
+	var req UpdateColorSlotRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		helper.SendError(c, http.StatusBadRequest, err, nil)
+		return
+	}
+	
+	userID, exists := c.Get(constants.UserID)
+	if !exists {
+		helper.SendError(c, http.StatusUnauthorized, errors.New("user ID not found in context"), nil)
+		return
+	}
+	
+	if userID == "" {
+		helper.SendError(c, http.StatusUnauthorized, errors.New("user ID not found in context"), nil)
+		return
+	}
+
+	token, exists := c.Get(constants.Token)
+	if !exists {
+		helper.SendError(c, 400, fmt.Errorf("token not found"), nil)
+		return
+	}
+
+	ctx := context.WithValue(c, constants.TokenKey, token)
+
+	err := h.ColorTimeService.UpdateColorSlot(ctx, weekColorTimeID, slotID, &req, userID.(string))
+	if err != nil {
+		helper.SendError(c, http.StatusBadRequest, err, nil)
+		return
+	}
+
+	helper.SendSuccess(c, http.StatusOK, "color slot updated successfully", nil)
+	
+}

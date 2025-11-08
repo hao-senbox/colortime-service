@@ -106,3 +106,8 @@ type AddSlotToColorBlockRequest struct {
 	ProductID      string `json:"product_id"`
 	OrganizationID string `json:"organization_id" binding:"required"`
 }
+
+type UpdateColorSlotRequest struct {
+	ProductID string `json:"product_id"`
+	Tracking  string `json:"tracking" binding:"required"`
+}
