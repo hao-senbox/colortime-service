@@ -204,64 +204,6 @@ func (h *ColorTimeHandler) DeleteTopicToColorTimeDay(c *gin.Context) {
 
 }
 
-func (h *ColorTimeHandler) CreateColorBlockAndSaveSlotHandler(c *gin.Context) {
-	weekColorTimeID := c.Param("week_colortime_id")
-
-	var req CreateColorBlockWithSlotRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		helper.SendError(c, http.StatusBadRequest, err, nil)
-		return
-	}
-
-	userID, exists := c.Get(constants.UserID)
-	if !exists {
-		helper.SendError(c, http.StatusUnauthorized, errors.New("user ID not found in context"), nil)
-		return
-	}
-
-	if userID == "" {
-		helper.SendError(c, http.StatusUnauthorized, errors.New("user ID not found in context"), nil)
-		return
-	}
-
-	colorBlock, err := h.ColorTimeService.CreateColorBlockAndSaveSlot(c, weekColorTimeID, &req, userID.(string))
-	if err != nil {
-		helper.SendError(c, http.StatusInternalServerError, err, nil)
-		return
-	}
-
-	helper.SendSuccess(c, http.StatusOK, "color block with single slot created successfully", colorBlock)
-}
-
-func (h *ColorTimeHandler) CreateColorBlockForSessionHandler(c *gin.Context) {
-	weekColorTimeID := c.Param("week_colortime_id")
-
-	var req CreateColorBlockWithSlotRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		helper.SendError(c, http.StatusBadRequest, err, nil)
-		return
-	}
-
-	userID, exists := c.Get(constants.UserID)
-	if !exists {
-		helper.SendError(c, http.StatusUnauthorized, errors.New("user ID not found in context"), nil)
-		return
-	}
-	
-	if userID == "" {
-		helper.SendError(c, http.StatusUnauthorized, errors.New("user ID not found in context"), nil)
-		return
-	}
-
-	colorBlock, err := h.ColorTimeService.CreateColorBlockForSession(c, weekColorTimeID, &req, userID.(string))
-	if err != nil {
-		helper.SendError(c, http.StatusInternalServerError, err, nil)
-		return
-	}
-
-	helper.SendSuccess(c, http.StatusOK, "color block for session created successfully", colorBlock)
-}
-
 func (h *ColorTimeHandler) UpdateColorSlotHandler(c *gin.Context) {
 	weekColorTimeID := c.Param("week_colortime_id")
 	slotID := c.Param("slot_id")

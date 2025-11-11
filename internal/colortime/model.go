@@ -27,7 +27,7 @@ type ColorTime struct {
 	CreatedAt time.Time          `bson:"created_at" json:"created_at"`
 	UpdatedAt time.Time          `bson:"updated_at" json:"updated_at"`
 }
-
+	
 type ColorBlock struct {
 	BlockID primitive.ObjectID `json:"block_id" bson:"block_id"`
 	Slots   []*ColortimeSlot   `json:"slots" bson:"slots"`
@@ -53,14 +53,3 @@ type Owner struct {
 	OwnerID   string `json:"owner_id" bson:"owner_id"`
 	OwnerRole string `json:"owner_role" bson:"owner_role"`
 }
-
-// type ColorTimeTemplate struct {
-// 	ID             primitive.ObjectID `bson:"_id" json:"id"`
-// 	OrganizationID string             `bson:"organization_id" json:"organization_id"`
-// 	Name           string             `bson:"name" json:"name"`
-// 	ColorTimes     []*ColortimeSlot   `bson:"color_times" json:"color_times"`
-// 	CreatedBy      string             `bson:"created_by" json:"created_by"`
-// 	IsDeleted      bool               `bson:"is_deleted" json:"is_deleted"`
-// 	CreatedAt      time.Time          `bson:"created_at" json:"created_at"`
-// 	UpdatedAt      time.Time          `bson:"updated_at" json:"updated_at"`
-// }

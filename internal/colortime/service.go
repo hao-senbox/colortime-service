@@ -21,8 +21,6 @@ type ColorTimeService interface {
 	AddTopicToColorTimeDay(ctx context.Context, id string, req *AddTopicToColorTimeDayRequest) error
 	DeleteTopicToColorTimeDay(ctx context.Context, id string, req *DeleteTopicToColorTimeDayRequest) error
 
-	CreateColorBlockAndSaveSlot(ctx context.Context, weekColorTimeID string, req *CreateColorBlockWithSlotRequest, userID string) (*ColorBlock, error)
-	CreateColorBlockForSession(ctx context.Context, weekColorTimeID string, req *CreateColorBlockWithSlotRequest, userID string) (*ColorBlock, error)
 	UpdateColorSlot(ctx context.Context, weekColorTimeID, slotID string, req *UpdateColorSlotRequest, userID string) error
 }
 
@@ -114,25 +112,15 @@ func (s *colorTimeService) GetColorTimeWeek(ctx context.Context, userID, role, o
 		return nil, fmt.Errorf("invalid end date: %w", err)
 	}
 
-	colortimeWeek, err := s.ColorTimeRepository.GetColorTimeWeek(ctx, &startDate, &endDate, orgID, userID, role)
+	defaultDayColorTimes, err := s.DefaultColorTimeRepository.GetDefaultDayColorTimesInRange(ctx, startDate, endDate, orgID)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to get default day colortimes: %w", err)
 	}
+	fmt.Println("defaultDayColorTimes", defaultDayColorTimes)
+	var colortimeWeek *WeekColorTime
 
-	defaultColorTimeWeek, err := s.DefaultColorTimeRepository.GetDefaultColorTimeWeek(ctx, &startDate, &endDate, orgID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get default colortime: %w", err)
-	}
-
-	if colortimeWeek == nil {
-		// If student doesn't have colortime for this week, create one with cloned data
-		var colorTimes []*ColorTime
-		if defaultColorTimeWeek != nil {
-			colorTimes = cloneDefaultColorTimesToColorTimes(defaultColorTimeWeek.ColorTimes)
-		} else {
-			colorTimes = []*ColorTime{}
-		}
-
+	if len(defaultDayColorTimes) > 0 {
+		colorTimes := cloneDefaultDayColorTimesToColorTimes(defaultDayColorTimes)
 		owner := &Owner{
 			OwnerID:   userID,
 			OwnerRole: role,
@@ -155,14 +143,27 @@ func (s *colorTimeService) GetColorTimeWeek(ctx context.Context, userID, role, o
 		}
 		colortimeWeek = newColorTimeWeek
 	} else {
-		if defaultColorTimeWeek != nil {
-			updated := syncStudentColorTimeWithDefault(colortimeWeek, defaultColorTimeWeek)
-			if updated {
-				if err := s.ColorTimeRepository.UpdateColorTimeWeek(ctx, colortimeWeek.ID, colortimeWeek); err != nil {
-					return nil, fmt.Errorf("failed to update colortime with synced data: %w", err)
-				}
-			}
+		owner := &Owner{
+			OwnerID:   userID,
+			OwnerRole: role,
 		}
+		newColorTimeWeek := &WeekColorTime{
+			ID:             primitive.NewObjectID(),
+			OrganizationID: orgID,
+			Owner:          owner,
+			StartDate:      startDate,
+			EndDate:        endDate,
+			TopicID:        nil,
+			ColorTimes:     []*ColorTime{}, 
+			CreatedBy:      userID,
+			CreatedAt:      time.Now(),
+			UpdatedAt:      time.Now(),
+		}
+
+		if err := s.ColorTimeRepository.CreateColorTimeWeek(ctx, newColorTimeWeek); err != nil {
+			return nil, err
+		}
+		colortimeWeek = newColorTimeWeek
 	}
 
 	var weekTopic Topic
@@ -358,301 +359,9 @@ func sameDay(a, b time.Time) bool {
 	return y1 == y2 && m1 == m2 && d1 == d2
 }
 
-func (s *colorTimeService) CreateColorBlockAndSaveSlot(
-	ctx context.Context,
-	weekColorTimeID string,
-	req *CreateColorBlockWithSlotRequest,
-	userID string,
-) (*ColorBlock, error) {
-
-	if userID == "" {
-		return nil, errors.New("user id is required")
-	}
-
-	if req.OrganizationID == "" {
-		return nil, errors.New("organization id is required")
-	}
-
-	if req.Date == "" {
-		return nil, errors.New("date is required")
-	}
-
-	dateParse, err := time.Parse("2006-01-02", req.Date)
-	if err != nil {
-		return nil, fmt.Errorf("invalid date format: %w", err)
-	}
-
-	if req.StartTime == "" {
-		return nil, errors.New("start time is required")
-	}
-
-	startTimeParse, err := time.Parse("15:04", req.StartTime)
-	if err != nil {
-		return nil, fmt.Errorf("invalid start time format: %w", err)
-	}
-
-	if req.Duration == 0 {
-		return nil, errors.New("duration is required")
-	}
-
-	if req.Title == "" {
-		return nil, errors.New("title is required")
-	}
-
-	if req.Color == "" {
-		return nil, errors.New("color is required")
-	}
-
-	if req.Tracking == "" {
-		return nil, fmt.Errorf("tracking is required")
-	}
-
-	// Get the WeekColorTime
-	weekObjectID, err := primitive.ObjectIDFromHex(weekColorTimeID)
-	if err != nil {
-		return nil, errors.New("invalid week colortime ID format")
-	}
-
-	week, err := s.ColorTimeRepository.GetColorTimeWeekByID(ctx, weekObjectID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get week colortime: %w", err)
-	}
-
-	if week == nil {
-		return nil, errors.New("week colortime not found")
-	}
-
-	// Find or create the ColorTime for the specific date
-	var colorTimeForDate *ColorTime
-	for _, ct := range week.ColorTimes {
-		if sameDay(ct.Date, dateParse) {
-			colorTimeForDate = ct
-			break
-		}
-	}
-
-	if colorTimeForDate == nil {
-		colorTimeForDate = &ColorTime{
-			ID:        primitive.NewObjectID(),
-			Date:      dateParse,
-			TopicID:   nil, // Assuming topic is set at week or day level, not block
-			TimeSlots: []*ColorBlock{},
-			CreatedAt: time.Now(),
-			UpdatedAt: time.Now(),
-		}
-		week.ColorTimes = append(week.ColorTimes, colorTimeForDate)
-	}
-
-	// Create the new slot
-	endTime := startTimeParse.Add(time.Duration(req.Duration) * time.Minute)
-
-	productID := &req.ProductID
-	if req.ProductID == "" {
-		productID = nil
-	}
-
-	for _, block := range colorTimeForDate.TimeSlots {
-		for _, slot := range block.Slots {
-			// nếu thời gian slot mới trùng khoảng với slot cũ
-			if (startTimeParse.Before(slot.EndTime) && endTime.After(slot.StartTime)) ||
-				(startTimeParse.Equal(slot.StartTime) || endTime.Equal(slot.EndTime)) {
-				return nil, fmt.Errorf("slot time conflicts with existing slot [%s - %s]",
-					slot.StartTime.Format("15:04"), slot.EndTime.Format("15:04"))
-			}
-		}
-	}
-
-	newSlot := &ColortimeSlot{
-		SlotID:    primitive.NewObjectID(),
-		Sessions:  1, // Always 1 for new slots in this flow
-		Title:     req.Title,
-		Tracking:  req.Tracking,
-		UseCount:  0,
-		StartTime: startTimeParse,
-		EndTime:   endTime,
-		Duration:  req.Duration,
-		Color:     req.Color,
-		Note:      req.Note,
-		ProductID: productID,
-		UpdatedAt: time.Now(),
-	}
-
-	// Create a new ColorBlock with the single slot
-	newColorBlock := &ColorBlock{
-		BlockID: primitive.NewObjectID(),
-		Slots:   []*ColortimeSlot{newSlot},
-	}
-
-	colorTimeForDate.TimeSlots = append(colorTimeForDate.TimeSlots, newColorBlock)
-	week.UpdatedAt = time.Now()
-
-	err = s.ColorTimeRepository.UpdateColorTimeWeek(ctx, week.ID, week)
-	if err != nil {
-		return nil, fmt.Errorf("failed to update week colortime with new block: %w", err)
-	}
-
-	return newColorBlock, nil
-}
-
-func (s *colorTimeService) CreateColorBlockForSession(
-	ctx context.Context,
-	weekColorTimeID string,
-	req *CreateColorBlockWithSlotRequest,
-	userID string,
-) (*ColorBlock, error) {
-
-	if userID == "" {
-		return nil, errors.New("user id is required")
-	}
-
-	if req.OrganizationID == "" {
-		return nil, errors.New("organization id is required")
-	}
-
-	if req.Date == "" {
-		return nil, errors.New("date is required")
-	}
-
-	dateParse, err := time.Parse("2006-01-02", req.Date)
-	if err != nil {
-		return nil, fmt.Errorf("invalid date format: %w", err)
-	}
-
-	if req.StartTime == "" {
-		return nil, errors.New("start time is required")
-	}
-
-	startTimeParse, err := time.Parse("15:04", req.StartTime)
-	if err != nil {
-		return nil, fmt.Errorf("invalid start time format: %w", err)
-	}
-
-	if req.Duration <= 0 {
-		return nil, errors.New("duration must be greater than 0")
-	}
-
-	if req.Title == "" {
-		return nil, errors.New("title is required")
-	}
-
-	if req.Color == "" {
-		return nil, errors.New("color is required")
-	}
-
-	if req.Tracking == "" {
-		return nil, fmt.Errorf("tracking is required")
-	}
-
-	weekObjectID, err := primitive.ObjectIDFromHex(weekColorTimeID)
-	if err != nil {
-		return nil, errors.New("invalid week colortime ID format")
-	}
-
-	week, err := s.ColorTimeRepository.GetColorTimeWeekByID(ctx, weekObjectID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get week colortime: %w", err)
-	}
-
-	if week == nil {
-		return nil, errors.New("week colortime not found")
-	}
-
-	var colorTimeForDate *ColorTime
-	for _, ct := range week.ColorTimes {
-		if sameDay(ct.Date, dateParse) {
-			colorTimeForDate = ct
-			break
-		}
-	}
-
-	if colorTimeForDate == nil {
-		colorTimeForDate = &ColorTime{
-			ID:        primitive.NewObjectID(),
-			Date:      dateParse,
-			TimeSlots: []*ColorBlock{},
-			CreatedAt: time.Now(),
-			UpdatedAt: time.Now(),
-		}
-		week.ColorTimes = append(week.ColorTimes, colorTimeForDate)
-	}
-
-	endTime := startTimeParse.Add(time.Duration(req.Duration) * time.Minute)
-	var productID *string
-	if req.ProductID != "" {
-		productID = &req.ProductID
-	}
-
-	for _, block := range colorTimeForDate.TimeSlots {
-		for _, slot := range block.Slots {
-			if (startTimeParse.Before(slot.EndTime) && endTime.After(slot.StartTime)) ||
-				startTimeParse.Equal(slot.StartTime) || endTime.Equal(slot.EndTime) {
-				return nil, fmt.Errorf("slot time conflicts with existing slot [%s - %s]",
-					slot.StartTime.Format("15:04"), slot.EndTime.Format("15:04"))
-			}
-		}
-	}
-
-	newSlot := &ColortimeSlot{
-		SlotID:    primitive.NewObjectID(),
-		Title:     req.Title,
-		Tracking:  req.Tracking,
-		UseCount:  0,
-		Sessions:  1,
-		StartTime: startTimeParse,
-		EndTime:   endTime,
-		Duration:  req.Duration,
-		Color:     req.Color,
-		Note:      req.Note,
-		ProductID: productID,
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
-	}
-
-	var targetBlock *ColorBlock
-	if req.BlockID != "" {
-		blockObjID, err := primitive.ObjectIDFromHex(req.BlockID)
-		if err != nil {
-			return nil, fmt.Errorf("invalid block_id format: %w", err)
-		}
-
-		for _, b := range colorTimeForDate.TimeSlots {
-			if b.BlockID == blockObjID {
-				targetBlock = b
-				break
-			}
-		}
-
-		if targetBlock == nil {
-			return nil, fmt.Errorf("block not found for given block_id")
-		}
-
-		newSlot.Sessions = len(targetBlock.Slots) + 1
-		targetBlock.Slots = append(targetBlock.Slots, newSlot)
-
-	} else {
-		newBlock := &ColorBlock{
-			BlockID: primitive.NewObjectID(),
-			Slots:   []*ColortimeSlot{newSlot},
-		}
-		colorTimeForDate.TimeSlots = append(colorTimeForDate.TimeSlots, newBlock)
-		targetBlock = newBlock
-	}
-
-	colorTimeForDate.UpdatedAt = time.Now()
-	week.UpdatedAt = time.Now()
-
-	if err := s.ColorTimeRepository.UpdateColorTimeWeek(ctx, week.ID, week); err != nil {
-		return nil, fmt.Errorf("failed to update week colortime with new block: %w", err)
-	}
-
-	return targetBlock, nil
-
-}
-
-func cloneDefaultColorTimesToColorTimes(defaultColorTimes []*default_colortime.DefaultColorTime) []*ColorTime {
-	colorTimes := make([]*ColorTime, 0, len(defaultColorTimes))
-
-	for _, defaultDay := range defaultColorTimes {
+func cloneDefaultDayColorTimesToColorTimes(defaultDayColorTimes []*default_colortime.DefaultDayColorTime) []*ColorTime {
+	colorTimes := make([]*ColorTime, 0, len(defaultDayColorTimes))
+	for _, defaultDay := range defaultDayColorTimes {
 		colorBlocks := make([]*ColorBlock, 0, len(defaultDay.TimeSlots))
 
 		for _, defaultBlock := range defaultDay.TimeSlots {
@@ -696,77 +405,6 @@ func cloneDefaultColorTimesToColorTimes(defaultColorTimes []*default_colortime.D
 	}
 
 	return colorTimes
-}
-
-func syncStudentColorTimeWithDefault(studentWeek *WeekColorTime, defaultWeek *default_colortime.DefaultWeekColorTime) bool {
-	if studentWeek == nil || defaultWeek == nil {
-		return false
-	}
-
-	updated := false
-
-	studentDateMap := make(map[string]*ColorTime)
-	for _, ct := range studentWeek.ColorTimes {
-		dateKey := ct.Date.Format("2006-01-02")
-		studentDateMap[dateKey] = ct
-	}
-
-	for _, defaultDay := range defaultWeek.ColorTimes {
-		dateKey := defaultDay.Date.Format("2006-01-02")
-		if _, exists := studentDateMap[dateKey]; !exists {
-			clonedDay := &ColorTime{
-				ID:        primitive.NewObjectID(),
-				Date:      defaultDay.Date,
-				TopicID:   nil,
-				TimeSlots: cloneDefaultColorBlocks(defaultDay.TimeSlots),
-				CreatedAt: time.Now(),
-				UpdatedAt: time.Now(),
-			}
-			studentWeek.ColorTimes = append(studentWeek.ColorTimes, clonedDay)
-			updated = true
-		}
-	}
-
-	if updated {
-		studentWeek.UpdatedAt = time.Now()
-	}
-
-	return updated
-}
-
-func cloneDefaultColorBlocks(defaultBlocks []*default_colortime.DefaultColorBlock) []*ColorBlock {
-	colorBlocks := make([]*ColorBlock, 0, len(defaultBlocks))
-
-	for _, defaultBlock := range defaultBlocks {
-		colorSlots := make([]*ColortimeSlot, 0, len(defaultBlock.Slots))
-
-		for _, defaultSlot := range defaultBlock.Slots {
-			colorSlot := &ColortimeSlot{
-				SlotID:    primitive.NewObjectID(),
-				Sessions:  defaultSlot.Sessions,
-				Title:     defaultSlot.Title,
-				Tracking:  "",
-				UseCount:  0,
-				StartTime: defaultSlot.StartTime,
-				EndTime:   defaultSlot.EndTime,
-				Duration:  defaultSlot.Duration,
-				Color:     defaultSlot.Color,
-				Note:      defaultSlot.Note,
-				ProductID: nil,
-				CreatedAt: time.Now(),
-				UpdatedAt: time.Now(),
-			}
-			colorSlots = append(colorSlots, colorSlot)
-		}
-
-		colorBlock := &ColorBlock{
-			BlockID: primitive.NewObjectID(),
-			Slots:   colorSlots,
-		}
-		colorBlocks = append(colorBlocks, colorBlock)
-	}
-
-	return colorBlocks
 }
 
 func (s *colorTimeService) UpdateColorSlot(ctx context.Context, weekColorTimeID, slotID string, req *UpdateColorSlotRequest, userID string) error {

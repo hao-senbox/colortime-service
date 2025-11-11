@@ -10,12 +10,14 @@ import (
 )
 
 type DefaultColorTimeRepository interface {
-	CreateDefaultColorTimeWeek(ctx context.Context, colortimeWeek *DefaultWeekColorTime) error
-	GetDefaultColorTimeWeek(ctx context.Context, startDate, endDate *time.Time, organizationID string) (*DefaultWeekColorTime, error)
-	GetDefaultColorTimeWeekByID(ctx context.Context, id primitive.ObjectID) (*DefaultWeekColorTime, error)
-	UpdateDefaultColorTimeWeek(ctx context.Context, id primitive.ObjectID, colortimeWeek *DefaultWeekColorTime) error
-	DeleteDefaultColorTimeWeek(ctx context.Context, id primitive.ObjectID) error
-	GetAllDefaultColorTimeWeeks(ctx context.Context, organizationID string) ([]*DefaultWeekColorTime, error)
+	CreateDefaultDayColorTime(ctx context.Context, dayColorTime *DefaultDayColorTime) error
+	GetDefaultDayColorTime(ctx context.Context, date time.Time, organizationID string) (*DefaultDayColorTime, error)
+	GetDefaultDayColorTimeByID(ctx context.Context, id primitive.ObjectID) (*DefaultDayColorTime, error)
+	GetDefaultDayColorTimeBySlotID(ctx context.Context, slotID primitive.ObjectID) (*DefaultDayColorTime, error)
+	UpdateDefaultDayColorTime(ctx context.Context, id primitive.ObjectID, dayColorTime *DefaultDayColorTime) error
+	DeleteDefaultDayColorTime(ctx context.Context, id primitive.ObjectID) error
+	GetDefaultDayColorTimesInRange(ctx context.Context, startDate, endDate time.Time, organizationID string) ([]*DefaultDayColorTime, error)
+	GetAllDefaultDayColorTimes(ctx context.Context, organizationID string) ([]*DefaultDayColorTime, error)
 }
 
 type defaultColorTimeRepository struct {
@@ -28,59 +30,83 @@ func NewDefaultColorTimeRepository(defaultColorTimeCollection *mongo.Collection)
 	}
 }
 
-func (r *defaultColorTimeRepository) CreateDefaultColorTimeWeek(ctx context.Context, colortimeWeek *DefaultWeekColorTime) error {
-	_, err := r.DefaultColorTimeCollection.InsertOne(ctx, colortimeWeek)
+func (r *defaultColorTimeRepository) CreateDefaultDayColorTime(ctx context.Context, dayColorTime *DefaultDayColorTime) error {
+	_, err := r.DefaultColorTimeCollection.InsertOne(ctx, dayColorTime)
 	return err
 }
 
-func (r *defaultColorTimeRepository) GetDefaultColorTimeWeek(ctx context.Context, startDate, endDate *time.Time, organizationID string) (*DefaultWeekColorTime, error) {
+func (r *defaultColorTimeRepository) GetDefaultDayColorTime(ctx context.Context, date time.Time, organizationID string) (*DefaultDayColorTime, error) {
 	filter := bson.M{
 		"organization_id": organizationID,
-		"start_date":      bson.M{"$lte": endDate},
-		"end_date":        bson.M{"$gte": startDate},
+		"date": bson.M{
+			"$gte": time.Date(date.Year(), date.Month(), date.Day(), 0, 0, 0, 0, date.Location()),
+			"$lt":  time.Date(date.Year(), date.Month(), date.Day(), 23, 59, 59, 999999999, date.Location()),
+		},
 	}
 
-	var colortimeWeek DefaultWeekColorTime
+	var dayColorTime DefaultDayColorTime
 
-	if err := r.DefaultColorTimeCollection.FindOne(ctx, filter).Decode(&colortimeWeek); err != nil {
+	if err := r.DefaultColorTimeCollection.FindOne(ctx, filter).Decode(&dayColorTime); err != nil {
 		if err == mongo.ErrNoDocuments {
 			return nil, nil
 		}
 		return nil, err
 	}
 
-	return &colortimeWeek, nil
+	return &dayColorTime, nil
 }
 
-func (r *defaultColorTimeRepository) GetDefaultColorTimeWeekByID(ctx context.Context, id primitive.ObjectID) (*DefaultWeekColorTime, error) {
-	var colortimeWeek DefaultWeekColorTime
+func (r *defaultColorTimeRepository) GetDefaultDayColorTimeByID(ctx context.Context, id primitive.ObjectID) (*DefaultDayColorTime, error) {
+	var dayColorTime DefaultDayColorTime
 
-	if err := r.DefaultColorTimeCollection.FindOne(ctx, bson.M{"_id": id}).Decode(&colortimeWeek); err != nil {
+	if err := r.DefaultColorTimeCollection.FindOne(ctx, bson.M{"_id": id}).Decode(&dayColorTime); err != nil {
 		if err == mongo.ErrNoDocuments {
 			return nil, nil
 		}
 		return nil, err
 	}
 
-	return &colortimeWeek, nil
+	return &dayColorTime, nil
 }
 
-func (r *defaultColorTimeRepository) UpdateDefaultColorTimeWeek(ctx context.Context, id primitive.ObjectID, colortimeWeek *DefaultWeekColorTime) error {
-	_, err := r.DefaultColorTimeCollection.UpdateOne(ctx, bson.M{"_id": id}, bson.M{"$set": colortimeWeek})
+func (r *defaultColorTimeRepository) GetDefaultDayColorTimeBySlotID(ctx context.Context, slotID primitive.ObjectID) (*DefaultDayColorTime, error) {
+
+	filter := bson.M{
+		"time_slots.slots.slot_id": slotID,
+	}
+
+	var dayColorTime DefaultDayColorTime
+	err := r.DefaultColorTimeCollection.FindOne(ctx, filter).Decode(&dayColorTime)
+	if err != nil {
+		if err == mongo.ErrNoDocuments {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	return &dayColorTime, nil
+}
+
+func (r *defaultColorTimeRepository) UpdateDefaultDayColorTime(ctx context.Context, id primitive.ObjectID, dayColorTime *DefaultDayColorTime) error {
+	_, err := r.DefaultColorTimeCollection.UpdateOne(ctx, bson.M{"_id": id}, bson.M{"$set": dayColorTime})
 	return err
 }
 
-func (r *defaultColorTimeRepository) DeleteDefaultColorTimeWeek(ctx context.Context, id primitive.ObjectID) error {
+func (r *defaultColorTimeRepository) DeleteDefaultDayColorTime(ctx context.Context, id primitive.ObjectID) error {
 	_, err := r.DefaultColorTimeCollection.DeleteOne(ctx, bson.M{"_id": id})
 	return err
 }
 
-func (r *defaultColorTimeRepository) GetAllDefaultColorTimeWeeks(ctx context.Context, organizationID string) ([]*DefaultWeekColorTime, error) {
+func (r *defaultColorTimeRepository) GetDefaultDayColorTimesInRange(ctx context.Context, startDate, endDate time.Time, organizationID string) ([]*DefaultDayColorTime, error) {
 	filter := bson.M{
 		"organization_id": organizationID,
+		"date": bson.M{
+			"$gte": time.Date(startDate.Year(), startDate.Month(), startDate.Day(), 0, 0, 0, 0, startDate.Location()),
+			"$lte": time.Date(endDate.Year(), endDate.Month(), endDate.Day(), 23, 59, 59, 999999999, endDate.Location()),
+		},
 	}
 
-	var colortimeWeeks []*DefaultWeekColorTime
+	var dayColorTimes []*DefaultDayColorTime
 
 	cursor, err := r.DefaultColorTimeCollection.Find(ctx, filter)
 	if err != nil {
@@ -88,9 +114,29 @@ func (r *defaultColorTimeRepository) GetAllDefaultColorTimeWeeks(ctx context.Con
 	}
 	defer cursor.Close(ctx)
 
-	if err := cursor.All(ctx, &colortimeWeeks); err != nil {
+	if err := cursor.All(ctx, &dayColorTimes); err != nil {
 		return nil, err
 	}
 
-	return colortimeWeeks, nil
+	return dayColorTimes, nil
+}
+
+func (r *defaultColorTimeRepository) GetAllDefaultDayColorTimes(ctx context.Context, organizationID string) ([]*DefaultDayColorTime, error) {
+	filter := bson.M{
+		"organization_id": organizationID,
+	}
+
+	var dayColorTimes []*DefaultDayColorTime
+
+	cursor, err := r.DefaultColorTimeCollection.Find(ctx, filter)
+	if err != nil {
+		return nil, err
+	}
+	defer cursor.Close(ctx)
+
+	if err := cursor.All(ctx, &dayColorTimes); err != nil {
+		return nil, err
+	}
+
+	return dayColorTimes, nil
 }

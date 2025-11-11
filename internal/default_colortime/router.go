@@ -9,19 +9,13 @@ import (
 func RegisterRoutes(r *gin.Engine, defaultColorTimeHandler *DefaultColorTimeHandler) {
 	defaultColorTime := r.Group("api/v1/default-colortime").Use(middleware.Secured())
 	{
-		// CRUD for default colortime week
-		// defaultColorTime.POST("", defaultColorTimeHandler.CreateDefaultColorTimeWeek)
-		defaultColorTime.GET("/week", defaultColorTimeHandler.GetDefaultColorTimeWeek)
-		defaultColorTime.GET("/weeks", defaultColorTimeHandler.GetAllDefaultColorTimeWeeks)
-		defaultColorTime.PUT("/:id", defaultColorTimeHandler.UpdateDefaultColorTimeWeek)
-		defaultColorTime.DELETE("/:id", defaultColorTimeHandler.DeleteDefaultColorTimeWeek)
+		defaultColorTime.POST("/day", defaultColorTimeHandler.CreateDefaultDayColorTime)
+		defaultColorTime.GET("/day", defaultColorTimeHandler.GetDefaultDayColorTime)
+		defaultColorTime.GET("/days", defaultColorTimeHandler.GetDefaultDayColorTimesInRange)
+		defaultColorTime.GET("/all-days", defaultColorTimeHandler.GetAllDefaultDayColorTimes)
+		defaultColorTime.DELETE("/day/:id", defaultColorTimeHandler.DeleteDefaultDayColorTime)
 
-		// Color block and slot management
-		defaultColorTime.POST("/week/:week_colortime_id/block/save", defaultColorTimeHandler.CreateDefaultColorBlockAndSaveSlotHandler)
-		defaultColorTime.POST("/week/:week_colortime_id/block/add-session", defaultColorTimeHandler.CreateDefaultColorBlockForSessionHandler)
-
-		// Slot update and delete
-		defaultColorTime.PUT("/week/:week_id/slot/:slot_id", defaultColorTimeHandler.UpdateDefaultColorSlot)
-		defaultColorTime.DELETE("/week/:week_id/slot/:slot_id", defaultColorTimeHandler.DeleteDefaultColorSlot)
+		defaultColorTime.GET("/day/:id/block/:slot_id", defaultColorTimeHandler.GetBlockBySlotID)
+		defaultColorTime.PUT("/day/:id/slot/edit/:slot_id", defaultColorTimeHandler.UpdateDefaultColorSlot)
 	}
 }

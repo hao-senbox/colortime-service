@@ -16,9 +16,6 @@ func RegisterRoutes(r *gin.Engine, colorTimeHandler *ColorTimeHandler) {
 		colorTime.POST("/add-topic/day/:id", colorTimeHandler.AddTopicToColorTimeDay)
 		colorTime.DELETE("/delete-topic/day/:id", colorTimeHandler.DeleteTopicToColorTimeDay)
 
-		colorTime.POST("/week/:week_colortime_id/block/save", colorTimeHandler.CreateColorBlockAndSaveSlotHandler)
-		colorTime.POST("/week/:week_colortime_id/block/add-session", colorTimeHandler.CreateColorBlockForSessionHandler)
-
 		colorTime.PUT("/week/:week_colortime_id/slot/:slot_id", colorTimeHandler.UpdateColorSlotHandler)
 	}
 }
