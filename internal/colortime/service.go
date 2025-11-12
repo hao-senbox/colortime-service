@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"time"
 
 	"go.mongodb.org/mongo-driver/bson/primitive"
@@ -116,54 +117,77 @@ func (s *colorTimeService) GetColorTimeWeek(ctx context.Context, userID, role, o
 	if err != nil {
 		return nil, fmt.Errorf("failed to get default day colortimes: %w", err)
 	}
-	fmt.Println("defaultDayColorTimes", defaultDayColorTimes)
+
 	var colortimeWeek *WeekColorTime
+
+	existingWeek, err := s.ColorTimeRepository.GetColorTimeWeek(ctx, &startDate, &endDate, orgID, userID, role)
+	if err != nil {
+		return nil, fmt.Errorf("failed to check existing week: %w", err)
+	}
 
 	if len(defaultDayColorTimes) > 0 {
 		colorTimes := cloneDefaultDayColorTimesToColorTimes(defaultDayColorTimes)
-		owner := &Owner{
-			OwnerID:   userID,
-			OwnerRole: role,
-		}
-		newColorTimeWeek := &WeekColorTime{
-			ID:             primitive.NewObjectID(),
-			OrganizationID: orgID,
-			Owner:          owner,
-			StartDate:      startDate,
-			EndDate:        endDate,
-			TopicID:        nil,
-			ColorTimes:     colorTimes,
-			CreatedBy:      userID,
-			CreatedAt:      time.Now(),
-			UpdatedAt:      time.Now(),
-		}
 
-		if err := s.ColorTimeRepository.CreateColorTimeWeek(ctx, newColorTimeWeek); err != nil {
-			return nil, err
+		if existingWeek != nil {
+			updatedColorTimes := s.mergeColorTimes(existingWeek.ColorTimes, colorTimes)
+			existingWeek.ColorTimes = updatedColorTimes
+			existingWeek.UpdatedAt = time.Now()
+
+			if err := s.ColorTimeRepository.UpdateColorTimeWeek(ctx, existingWeek.ID, existingWeek); err != nil {
+				return nil, fmt.Errorf("failed to update existing week: %w", err)
+			}
+			colortimeWeek = existingWeek
+		} else {
+			owner := &Owner{
+				OwnerID:   userID,
+				OwnerRole: role,
+			}
+			newColorTimeWeek := &WeekColorTime{
+				ID:             primitive.NewObjectID(),
+				OrganizationID: orgID,
+				Owner:          owner,
+				StartDate:      startDate,
+				EndDate:        endDate,
+				TopicID:        nil,
+				ColorTimes:     colorTimes,
+				CreatedBy:      userID,
+				CreatedAt:      time.Now(),
+				UpdatedAt:      time.Now(),
+			}
+
+			if err := s.ColorTimeRepository.CreateColorTimeWeek(ctx, newColorTimeWeek); err != nil {
+				return nil, err
+			}
+			colortimeWeek = newColorTimeWeek
 		}
-		colortimeWeek = newColorTimeWeek
 	} else {
-		owner := &Owner{
-			OwnerID:   userID,
-			OwnerRole: role,
-		}
-		newColorTimeWeek := &WeekColorTime{
-			ID:             primitive.NewObjectID(),
-			OrganizationID: orgID,
-			Owner:          owner,
-			StartDate:      startDate,
-			EndDate:        endDate,
-			TopicID:        nil,
-			ColorTimes:     []*ColorTime{}, 
-			CreatedBy:      userID,
-			CreatedAt:      time.Now(),
-			UpdatedAt:      time.Now(),
-		}
+		if existingWeek != nil {
+			// Return existing week if it already exists
+			colortimeWeek = existingWeek
+		} else {
+			// Create new empty week only if it doesn't exist
+			owner := &Owner{
+				OwnerID:   userID,
+				OwnerRole: role,
+			}
+			newColorTimeWeek := &WeekColorTime{
+				ID:             primitive.NewObjectID(),
+				OrganizationID: orgID,
+				Owner:          owner,
+				StartDate:      startDate,
+				EndDate:        endDate,
+				TopicID:        nil,
+				ColorTimes:     []*ColorTime{},
+				CreatedBy:      userID,
+				CreatedAt:      time.Now(),
+				UpdatedAt:      time.Now(),
+			}
 
-		if err := s.ColorTimeRepository.CreateColorTimeWeek(ctx, newColorTimeWeek); err != nil {
-			return nil, err
+			if err := s.ColorTimeRepository.CreateColorTimeWeek(ctx, newColorTimeWeek); err != nil {
+				return nil, err
+			}
+			colortimeWeek = newColorTimeWeek
 		}
-		colortimeWeek = newColorTimeWeek
 	}
 
 	var weekTopic Topic
@@ -196,12 +220,16 @@ func (s *colorTimeService) GetColorTimeWeek(ctx context.Context, userID, role, o
 				}
 			}
 		}
+		blockResponses, err := s.convertBlocksWithProductInfo(ctx, day.TimeSlots)
+		if err != nil {
+			return nil, fmt.Errorf("failed to convert blocks for day %v: %w", day.Date, err)
+		}
 
 		colorTimeResponses = append(colorTimeResponses, &ColorTimeResponse{
 			ID:        day.ID,
 			Date:      day.Date,
 			Topic:     dayTopic,
-			TimeSlots: day.TimeSlots,
+			TimeSlots: blockResponses,
 			CreatedAt: day.CreatedAt,
 			UpdatedAt: day.UpdatedAt,
 		})
@@ -369,7 +397,8 @@ func cloneDefaultDayColorTimesToColorTimes(defaultDayColorTimes []*default_color
 
 			for _, defaultSlot := range defaultBlock.Slots {
 				colorSlot := &ColortimeSlot{
-					SlotID:    primitive.NewObjectID(),
+					SlotID:    defaultSlot.SlotID,
+					SlotIDOld: &defaultSlot.SlotID,
 					Sessions:  defaultSlot.Sessions,
 					Title:     defaultSlot.Title,
 					Tracking:  "",
@@ -387,8 +416,9 @@ func cloneDefaultDayColorTimesToColorTimes(defaultDayColorTimes []*default_color
 			}
 
 			colorBlock := &ColorBlock{
-				BlockID: primitive.NewObjectID(),
-				Slots:   colorSlots,
+				BlockID:    defaultBlock.BlockID,
+				BlockIDOld: &defaultBlock.BlockID,
+				Slots:      colorSlots,
 			}
 			colorBlocks = append(colorBlocks, colorBlock)
 		}
@@ -436,8 +466,8 @@ func (s *colorTimeService) UpdateColorSlot(ctx context.Context, weekColorTimeID,
 		return errors.New("week colortime not found")
 	}
 
-	// Find target slot in all blocks and days
 	var targetSlot *ColortimeSlot
+
 	for _, colorTime := range week.ColorTimes {
 		for _, block := range colorTime.TimeSlots {
 			for _, slot := range block.Slots {
@@ -459,27 +489,21 @@ func (s *colorTimeService) UpdateColorSlot(ctx context.Context, weekColorTimeID,
 		return errors.New("slot not found")
 	}
 
-	// Update product_id
+	oldTracking := targetSlot.Tracking
+	targetTracking := req.Tracking
+
 	targetSlot.ProductID = nil
 	if req.ProductID != "" {
 		targetSlot.ProductID = &req.ProductID
 	}
 
-	// Count how many slots have the same tracking as the new tracking
-	trackingCount := 0
-	for _, colorTime := range week.ColorTimes {
-		for _, block := range colorTime.TimeSlots {
-			for _, slot := range block.Slots {
-				if slot.Tracking == req.Tracking {
-					trackingCount++
-				}
-			}
-		}
+	trackingCount, err := s.ColorTimeRepository.CountTrackingUsage(ctx, week.OrganizationID, week.Owner.OwnerID, week.Owner.OwnerRole, req.Tracking)
+	if err != nil {
+		return fmt.Errorf("failed to count tracking usage: %w", err)
 	}
 
-	// Set tracking and use count (number of times this tracking appears)
 	targetSlot.Tracking = req.Tracking
-	targetSlot.UseCount = trackingCount
+	targetSlot.UseCount = trackingCount + 1
 
 	targetSlot.UpdatedAt = time.Now()
 	week.UpdatedAt = time.Now()
@@ -488,5 +512,209 @@ func (s *colorTimeService) UpdateColorSlot(ctx context.Context, weekColorTimeID,
 		return fmt.Errorf("failed to update week colortime: %w", err)
 	}
 
+	if oldTracking != targetTracking && oldTracking != "" {
+		if err := s.normalizeTrackingGlobal(ctx, week.OrganizationID, week.Owner.OwnerID, week.Owner.OwnerRole, oldTracking); err != nil {
+			return fmt.Errorf("failed to normalize tracking global: %w", err)
+		}
+		if err := s.normalizeTrackingGlobal(ctx, week.OrganizationID, week.Owner.OwnerID, week.Owner.OwnerRole, targetTracking); err != nil {
+			return fmt.Errorf("failed to normalize tracking global: %w", err)
+		}
+	}
+
 	return nil
+}
+
+func (s *colorTimeService) normalizeTrackingGlobal(ctx context.Context, organizationID, userID, role, tracking string) error {
+
+	slots, weeks, err := s.ColorTimeRepository.GetAllSlotsByTracking(ctx, organizationID, userID, role, tracking)
+	if err != nil {
+		return fmt.Errorf("failed to get all slots by tracking: %w", err)
+	}
+
+	sort.Slice(slots, func(i, j int) bool {
+		return slots[i].CreatedAt.Before(slots[j].CreatedAt)
+	})
+
+	for i, slot := range slots {
+		slot.UseCount = i + 1
+		slot.UpdatedAt = time.Now()
+	}
+
+	for _, week := range weeks {
+		week.UpdatedAt = time.Now()
+		if err := s.ColorTimeRepository.UpdateColorTimeWeek(ctx, week.ID, week); err != nil {
+			return err
+		}
+	}
+
+	return nil
+
+}
+
+func (s *colorTimeService) convertBlocksWithProductInfo(ctx context.Context, blocks []*ColorBlock) ([]*BlockResponse, error) {
+	blockResponses := make([]*BlockResponse, 0, len(blocks))
+
+	for _, block := range blocks {
+		slotResponses := make([]*SlotResponse, 0, len(block.Slots))
+
+		for _, slot := range block.Slots {
+			slotResponse := &SlotResponse{
+				SlotID:    slot.SlotID,
+				SlotIDOld: *slot.SlotIDOld,
+				Sessions:  slot.Sessions,
+				Title:     slot.Title,
+				Tracking:  slot.Tracking,
+				UseCount:  slot.UseCount,
+				StartTime: slot.StartTime,
+				EndTime:   slot.EndTime,
+				Duration:  slot.Duration,
+				Color:     slot.Color,
+				Note:      slot.Note,
+				ProductID: slot.ProductID,
+				CreatedAt: slot.CreatedAt,
+				UpdatedAt: slot.UpdatedAt,
+			}
+
+			if slot.ProductID != nil && *slot.ProductID != "" {
+				product, err := s.ProductService.GetProductInfor(ctx, *slot.ProductID)
+				if err != nil {
+					fmt.Printf("Warning: failed to get product info for ID %s: %v\n", *slot.ProductID, err)
+				} else if product != nil {
+					slotResponse.Product = &ProductInfo{
+						ID:                   product.ID.Hex(),
+						ProductName:          product.ProductName,
+						OriginalPriceStore:   product.OriginalPriceStore,
+						OriginalPriceService: product.OriginalPriceService,
+						ProductImage:         product.ProductImage,
+						TopicName:            product.TopicName,
+						CategoryName:         product.CategoryName,
+					}
+				}
+			}
+
+			slotResponses = append(slotResponses, slotResponse)
+		}
+
+		blockResponse := &BlockResponse{
+			BlockID:    block.BlockID,
+			BlockIDOld: *block.BlockIDOld,
+			Slots:      slotResponses,
+		}
+
+		blockResponses = append(blockResponses, blockResponse)
+	}
+
+	return blockResponses, nil
+}
+
+func (s *colorTimeService) mergeColorTimes(existingCT, defaultCT []*ColorTime) []*ColorTime {
+	merged := make([]*ColorTime, 0)
+
+	existingMap := make(map[string]*ColorTime)
+	for _, e := range existingCT {
+		existingMap[e.Date.Format("2006-01-02")] = e
+	}
+
+	for _, def := range defaultCT {
+		dateStr := def.Date.Format("2006-01-02")
+		if userCT, exists := existingMap[dateStr]; exists {
+			mergedCT := s.mergeSingleColorTime(userCT, def)
+			merged = append(merged, mergedCT)
+			delete(existingMap, dateStr)
+		} else {
+			newCT := *def
+			newCT.ID = primitive.NewObjectID()
+			newCT.CreatedAt = time.Now()
+			newCT.UpdatedAt = time.Now()
+			merged = append(merged, &newCT)
+		}
+	}
+
+	return merged
+}
+
+func (s *colorTimeService) mergeSingleColorTime(existingCT, defaultCT *ColorTime) *ColorTime {
+	mergedCT := &ColorTime{
+		ID:        existingCT.ID,
+		Date:      existingCT.Date,
+		TopicID:   existingCT.TopicID,
+		TimeSlots: make([]*ColorBlock, 0),
+		CreatedAt: existingCT.CreatedAt,
+		UpdatedAt: time.Now(),
+	}
+
+	existingBlocksMap := make(map[string]*ColorBlock)
+	for _, b := range existingCT.TimeSlots {
+		key := ""
+		if b.BlockIDOld != nil {
+			key = b.BlockIDOld.Hex()
+		} else {
+			key = b.BlockID.Hex()
+		}
+		existingBlocksMap[key] = b
+	}
+
+	for _, defaultBlock := range defaultCT.TimeSlots {
+		defKey := defaultBlock.BlockID.Hex()
+		if userBlock, exists := existingBlocksMap[defKey]; exists {
+			mergedBlock := s.mergeSingleBlock(userBlock, defaultBlock)
+			mergedCT.TimeSlots = append(mergedCT.TimeSlots, mergedBlock)
+			delete(existingBlocksMap, defKey)
+		} else {
+			newBlock := cloneBlock(defaultBlock)
+			newBlock.BlockIDOld = &defaultBlock.BlockID
+			mergedCT.TimeSlots = append(mergedCT.TimeSlots, newBlock)
+		}
+	}
+	return mergedCT
+}
+
+func (s *colorTimeService) mergeSingleBlock(existingBlock, defaultBlock *ColorBlock) *ColorBlock {
+	mergedBlock := &ColorBlock{
+		BlockID:    existingBlock.BlockID,
+		BlockIDOld: existingBlock.BlockIDOld,
+		Slots:      make([]*ColortimeSlot, 0),
+	}
+
+	existingSlotsMap := make(map[string]*ColortimeSlot)
+	for _, s := range existingBlock.Slots {
+		key := ""
+		if s.SlotIDOld != nil {
+			key = s.SlotIDOld.Hex()
+		} else {
+			key = s.SlotID.Hex()
+		}
+		existingSlotsMap[key] = s
+	}
+
+	for _, defaultSlot := range defaultBlock.Slots {
+		defKey := defaultSlot.SlotID.Hex()
+		if userSlot, exists := existingSlotsMap[defKey]; exists {
+			mergedBlock.Slots = append(mergedBlock.Slots, userSlot)
+			delete(existingSlotsMap, defKey)
+		} else {
+			newSlot := cloneSlot(defaultSlot)
+			newSlot.SlotIDOld = &defaultSlot.SlotID
+			mergedBlock.Slots = append(mergedBlock.Slots, newSlot)
+		}
+	}
+	
+	return mergedBlock
+}
+
+func cloneBlock(block *ColorBlock) *ColorBlock {
+	newBlock := *block
+	newBlock.BlockID = primitive.NewObjectID()
+	newSlots := make([]*ColortimeSlot, 0)
+	for _, s := range block.Slots {
+		newSlots = append(newSlots, cloneSlot(s))
+	}
+	newBlock.Slots = newSlots
+	return &newBlock
+}
+
+func cloneSlot(s *ColortimeSlot) *ColortimeSlot {
+	newSlot := *s
+	newSlot.SlotID = primitive.NewObjectID()
+	return &newSlot
 }

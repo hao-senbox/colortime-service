@@ -1,7 +1,9 @@
 package product
 
 import (
+	"colortime-service/pkg/constants"
 	"colortime-service/pkg/consul"
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -13,7 +15,7 @@ import (
 )
 
 type ProductService interface {
-	GetProductInfor(productID string) (*Product, error)
+	GetProductInfor(ctx context.Context, productID string) (*Product, error)
 }
 
 type productService struct {
@@ -69,9 +71,13 @@ func NewServiceAPI(client *api.Client, serviceName string) *callAPI {
 	}
 }
 
-func (s *productService) GetProductInfor(productID string) (*Product, error) {
+func (s *productService) GetProductInfor(ctx context.Context, productID string) (*Product, error) {
+	token, ok := ctx.Value(constants.TokenKey).(string)
+	if !ok {
+		return nil, fmt.Errorf("token not found in context")
+	}
 
-	productRes, err := s.client.getProductInfor(productID)
+	productRes, err := s.client.getProductInfor(productID, token)
 	if err != nil {
 		return nil, err
 	}
@@ -123,11 +129,14 @@ func (s *productService) GetProductInfor(productID string) (*Product, error) {
 	}, nil
 }
 
-func (c *callAPI) getProductInfor(productID string) (map[string]interface{}, error) {
+func (c *callAPI) getProductInfor(productID, token string) (map[string]interface{}, error) {
 
 	endpoint := fmt.Sprintf("/api/v1/products/%s", productID)
-
-	res, err := c.client.CallAPI(c.clientServer, endpoint, http.MethodGet, nil, nil)
+	header := map[string]string{
+		"Content-Type":  "application/json",
+		"Authorization": "Bearer " + token,
+	}
+	res, err := c.client.CallAPI(c.clientServer, endpoint, http.MethodGet, nil, header)
 	if err != nil {
 		fmt.Printf("Error calling API: %v\n", err)
 		return nil, err

@@ -27,14 +27,16 @@ type ColorTime struct {
 	CreatedAt time.Time          `bson:"created_at" json:"created_at"`
 	UpdatedAt time.Time          `bson:"updated_at" json:"updated_at"`
 }
-	
+
 type ColorBlock struct {
-	BlockID primitive.ObjectID `json:"block_id" bson:"block_id"`
-	Slots   []*ColortimeSlot   `json:"slots" bson:"slots"`
+	BlockID    primitive.ObjectID `json:"block_id" bson:"block_id"`
+	BlockIDOld *primitive.ObjectID `json:"block_id_old" bson:"block_id_old"`
+	Slots      []*ColortimeSlot   `json:"slots" bson:"slots"`
 }
 
 type ColortimeSlot struct {
 	SlotID    primitive.ObjectID `json:"slot_id" bson:"slot_id"`
+	SlotIDOld *primitive.ObjectID `json:"slot_id_old" bson:"slot_id_old"`
 	Sessions  int                `json:"sessions" bson:"sessions"`
 	Title     string             `json:"title" bson:"title"`
 	Tracking  string             `json:"tracking" bson:"tracking"`
