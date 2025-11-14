@@ -79,7 +79,7 @@ func (s *defaultColorTimeService) CreateDefaultDayColorTime(ctx context.Context,
 		return nil, fmt.Errorf("invalid start_time format (use HH:MM): %w", err)
 	}
 
-	endTime := startTime.Add(time.Duration(req.Duration) * time.Minute)
+	endTime := startTime.Add(time.Duration(req.Duration) * time.Second)
 
 	repeatType := req.RepeatType
 	if repeatType == "" {
@@ -136,8 +136,8 @@ func (s *defaultColorTimeService) CreateDefaultDayColorTime(ctx context.Context,
 		SlotID:    primitive.NewObjectID(),
 		Sessions:  1,
 		Title:     req.Title,
-		StartTime: time.Date(date.Year(), date.Month(), date.Day(), startTime.Hour(), startTime.Minute(), 0, 0, date.Location()),
-		EndTime:   time.Date(date.Year(), date.Month(), date.Day(), endTime.Hour(), endTime.Minute(), 0, 0, date.Location()),
+		StartTime: startTime,
+		EndTime:   endTime,
 		Duration:  req.Duration,
 		Color:     req.Color,
 		Note:      req.Note,
@@ -238,8 +238,8 @@ func (s *defaultColorTimeService) CreateDefaultDayColorTime(ctx context.Context,
 				SlotID:    primitive.NewObjectID(),
 				Sessions:  len(targetBlock.Slots) + 1,
 				Title:     baseSlot.Title,
-				StartTime: time.Date(d.Year(), d.Month(), d.Day(), baseSlot.StartTime.Hour(), baseSlot.StartTime.Minute(), 0, 0, d.Location()),
-				EndTime:   time.Date(d.Year(), d.Month(), d.Day(), baseSlot.EndTime.Hour(), baseSlot.EndTime.Minute(), 0, 0, d.Location()),
+				StartTime: baseSlot.StartTime,
+				EndTime:   baseSlot.EndTime,
 				Duration:  baseSlot.Duration,
 				Color:     baseSlot.Color,
 				Note:      baseSlot.Note,
@@ -524,7 +524,7 @@ func (s *defaultColorTimeService) UpdateDefaultColorSlot(ctx context.Context, da
 				}
 
 				if newStartTime != nil || req.Duration > 0 {
-					slot.EndTime = slot.StartTime.Add(time.Duration(slot.Duration) * time.Minute)
+					slot.EndTime = slot.StartTime.Add(time.Duration(slot.Duration) * time.Second)
 				}
 
 				slot.UpdatedAt = time.Now()

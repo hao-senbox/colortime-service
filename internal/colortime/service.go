@@ -85,6 +85,49 @@ func (s *colorTimeService) AddTopicToColorTimeWeek(ctx context.Context, id strin
 
 }
 
+// syncColorTimesWithDefault syncs existing colorTimes with latest default data
+func (s *colorTimeService) syncColorTimesWithDefault(colorTimes []*ColorTime, defaultDayColorTimes []*default_colortime.DefaultDayColorTime) {
+	// Create map from date to default day for quick lookup
+	defaultMap := make(map[string]*default_colortime.DefaultDayColorTime)
+	for _, defaultDay := range defaultDayColorTimes {
+		dateStr := defaultDay.Date.Format("2006-01-02")
+		defaultMap[dateStr] = defaultDay
+	}
+
+	// Sync each colorTime with corresponding default data
+	for _, colorTime := range colorTimes {
+		dateStr := colorTime.Date.Format("2006-01-02")
+		if defaultDay, exists := defaultMap[dateStr]; exists {
+			// Create map from slot ID to default slot for quick lookup
+			defaultSlotMap := make(map[string]*default_colortime.DefaultColortimeSlot)
+			for _, defaultBlock := range defaultDay.TimeSlots {
+				for _, defaultSlot := range defaultBlock.Slots {
+					slotIDStr := defaultSlot.SlotID.Hex()
+					defaultSlotMap[slotIDStr] = defaultSlot
+				}
+			}
+
+			// Update colorTime slots with default data
+			for _, colorBlock := range colorTime.TimeSlots {
+				for _, colorSlot := range colorBlock.Slots {
+					if colorSlot.SlotIDOld != nil {
+						slotIDStr := colorSlot.SlotIDOld.Hex()
+						if defaultSlot, exists := defaultSlotMap[slotIDStr]; exists {
+							// Sync fields from default to colortime
+							colorSlot.StartTime = defaultSlot.StartTime
+							colorSlot.EndTime = defaultSlot.EndTime
+							colorSlot.Duration = defaultSlot.Duration
+							colorSlot.Title = defaultSlot.Title
+							colorSlot.Color = defaultSlot.Color
+							colorSlot.Note = defaultSlot.Note
+						}
+					}
+				}
+			}
+		}
+	}
+}
+
 func (s *colorTimeService) GetColorTimeWeek(ctx context.Context, userID, role, orgID, start, end string) (*TopicToColorTimeWeekResponse, error) {
 
 	if userID == "" {
@@ -131,6 +174,10 @@ func (s *colorTimeService) GetColorTimeWeek(ctx context.Context, userID, role, o
 		if existingWeek != nil {
 			updatedColorTimes := s.mergeColorTimes(existingWeek.ColorTimes, colorTimes)
 			existingWeek.ColorTimes = updatedColorTimes
+
+			// Sync with latest default data
+			s.syncColorTimesWithDefault(existingWeek.ColorTimes, defaultDayColorTimes)
+
 			existingWeek.UpdatedAt = time.Now()
 
 			if err := s.ColorTimeRepository.UpdateColorTimeWeek(ctx, existingWeek.ID, existingWeek); err != nil {
@@ -154,6 +201,9 @@ func (s *colorTimeService) GetColorTimeWeek(ctx context.Context, userID, role, o
 				CreatedAt:      time.Now(),
 				UpdatedAt:      time.Now(),
 			}
+
+			// Sync with latest default data before saving
+			s.syncColorTimesWithDefault(newColorTimeWeek.ColorTimes, defaultDayColorTimes)
 
 			if err := s.ColorTimeRepository.CreateColorTimeWeek(ctx, newColorTimeWeek); err != nil {
 				return nil, err
@@ -397,7 +447,7 @@ func cloneDefaultDayColorTimesToColorTimes(defaultDayColorTimes []*default_color
 
 			for _, defaultSlot := range defaultBlock.Slots {
 				colorSlot := &ColortimeSlot{
-					SlotID:    defaultSlot.SlotID,
+					SlotID:    primitive.NewObjectID(),
 					SlotIDOld: &defaultSlot.SlotID,
 					Sessions:  defaultSlot.Sessions,
 					Title:     defaultSlot.Title,
@@ -416,7 +466,7 @@ func cloneDefaultDayColorTimesToColorTimes(defaultDayColorTimes []*default_color
 			}
 
 			colorBlock := &ColorBlock{
-				BlockID:    defaultBlock.BlockID,
+				BlockID:    primitive.NewObjectID(),
 				BlockIDOld: &defaultBlock.BlockID,
 				Slots:      colorSlots,
 			}
@@ -608,17 +658,21 @@ func (s *colorTimeService) convertBlocksWithProductInfo(ctx context.Context, blo
 }
 
 func (s *colorTimeService) mergeColorTimes(existingCT, defaultCT []*ColorTime) []*ColorTime {
+
 	merged := make([]*ColorTime, 0)
 
 	existingMap := make(map[string]*ColorTime)
 	for _, e := range existingCT {
-		existingMap[e.Date.Format("2006-01-02")] = e
+		key := e.Date.Format("2006-01-02")
+		existingMap[key] = e
 	}
 
 	for _, def := range defaultCT {
 		dateStr := def.Date.Format("2006-01-02")
+
 		if userCT, exists := existingMap[dateStr]; exists {
 			mergedCT := s.mergeSingleColorTime(userCT, def)
+
 			merged = append(merged, mergedCT)
 			delete(existingMap, dateStr)
 		} else {
@@ -626,6 +680,7 @@ func (s *colorTimeService) mergeColorTimes(existingCT, defaultCT []*ColorTime) [
 			newCT.ID = primitive.NewObjectID()
 			newCT.CreatedAt = time.Now()
 			newCT.UpdatedAt = time.Now()
+
 			merged = append(merged, &newCT)
 		}
 	}
@@ -634,6 +689,7 @@ func (s *colorTimeService) mergeColorTimes(existingCT, defaultCT []*ColorTime) [
 }
 
 func (s *colorTimeService) mergeSingleColorTime(existingCT, defaultCT *ColorTime) *ColorTime {
+
 	mergedCT := &ColorTime{
 		ID:        existingCT.ID,
 		Date:      existingCT.Date,
@@ -651,11 +707,14 @@ func (s *colorTimeService) mergeSingleColorTime(existingCT, defaultCT *ColorTime
 		} else {
 			key = b.BlockID.Hex()
 		}
+
 		existingBlocksMap[key] = b
 	}
 
 	for _, defaultBlock := range defaultCT.TimeSlots {
-		defKey := defaultBlock.BlockID.Hex()
+		defKey := defaultBlock.BlockIDOld.Hex()
+
+
 		if userBlock, exists := existingBlocksMap[defKey]; exists {
 			mergedBlock := s.mergeSingleBlock(userBlock, defaultBlock)
 			mergedCT.TimeSlots = append(mergedCT.TimeSlots, mergedBlock)
@@ -670,6 +729,7 @@ func (s *colorTimeService) mergeSingleColorTime(existingCT, defaultCT *ColorTime
 }
 
 func (s *colorTimeService) mergeSingleBlock(existingBlock, defaultBlock *ColorBlock) *ColorBlock {
+
 	mergedBlock := &ColorBlock{
 		BlockID:    existingBlock.BlockID,
 		BlockIDOld: existingBlock.BlockIDOld,
@@ -688,7 +748,9 @@ func (s *colorTimeService) mergeSingleBlock(existingBlock, defaultBlock *ColorBl
 	}
 
 	for _, defaultSlot := range defaultBlock.Slots {
-		defKey := defaultSlot.SlotID.Hex()
+		defKey := defaultSlot.SlotIDOld.Hex()
+
+
 		if userSlot, exists := existingSlotsMap[defKey]; exists {
 			mergedBlock.Slots = append(mergedBlock.Slots, userSlot)
 			delete(existingSlotsMap, defKey)
@@ -698,7 +760,7 @@ func (s *colorTimeService) mergeSingleBlock(existingBlock, defaultBlock *ColorBl
 			mergedBlock.Slots = append(mergedBlock.Slots, newSlot)
 		}
 	}
-	
+
 	return mergedBlock
 }
 

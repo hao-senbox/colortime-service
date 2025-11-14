@@ -19,14 +19,12 @@ type ColorTimeRepository interface {
 }
 
 type colorTimeRepository struct {
-	ColorTimeCollection         *mongo.Collection
-	ColorTimeTemplateCollection *mongo.Collection
+	ColorTimeCollection *mongo.Collection
 }
 
-func NewColorTimeRepository(colorTimeCollection, colorTimeTemplateCollection *mongo.Collection) ColorTimeRepository {
+func NewColorTimeRepository(colorTimeCollection *mongo.Collection) ColorTimeRepository {
 	return &colorTimeRepository{
-		ColorTimeCollection:         colorTimeCollection,
-		ColorTimeTemplateCollection: colorTimeTemplateCollection,
+		ColorTimeCollection: colorTimeCollection,
 	}
 }
 

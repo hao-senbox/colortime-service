@@ -6,6 +6,8 @@ import (
 	"colortime-service/internal/default_colortime"
 	"colortime-service/internal/language"
 	"colortime-service/internal/product"
+	templatecolortime "colortime-service/internal/template_colortime"
+	"colortime-service/internal/term"
 	"colortime-service/internal/topic"
 	"colortime-service/internal/user"
 	"colortime-service/pkg/consul"
@@ -56,23 +58,30 @@ func main() {
 	languageService := language.NewLanguageService(consulClient)
 	userService := user.NewUserService(consulClient)
 	topicService := topic.NewTopicService(consulClient)
+	termService := term.NewTermService(consulClient)
 
 	colorTimeCollection := mongoClient.Database(cfg.MongoDB).Collection("colortime")
-	colorTimeTemplateCollection := mongoClient.Database(cfg.MongoDB).Collection("colortime_template")
 	defaultColorTimeCollection := mongoClient.Database(cfg.MongoDB).Collection("default_colortime")
+	colorTimeTemplateCollection := mongoClient.Database(cfg.MongoDB).Collection("colortime_template")
 
-	colorTimeRepository := colortime.NewColorTimeRepository(colorTimeCollection, colorTimeTemplateCollection)
+	colorTimeRepository := colortime.NewColorTimeRepository(colorTimeCollection)
+	templateColorTimeRepository := templatecolortime.NewTemplateColorTimeRepository(colorTimeTemplateCollection)
 	defaultColorTimeRepository := default_colortime.NewDefaultColorTimeRepository(defaultColorTimeCollection)
-	colorTimeService := colortime.NewColorTimeService(colorTimeRepository, defaultColorTimeRepository, productService, languageService, userService, topicService)
-	colorTimeHandler := colortime.NewColorTimeHandler(colorTimeService)
 
 	defaultColorTimeService := default_colortime.NewDefaultColorTimeService(defaultColorTimeRepository, productService, topicService)
 	defaultColorTimeHandler := default_colortime.NewDefaultColorTimeHandler(defaultColorTimeService)
+
+	colorTimeService := colortime.NewColorTimeService(colorTimeRepository, defaultColorTimeRepository, productService, languageService, userService, topicService)
+	colorTimeHandler := colortime.NewColorTimeHandler(colorTimeService)
+
+	templateColorTimeService := templatecolortime.NewTemplateColorTimeService(templateColorTimeRepository, termService, defaultColorTimeRepository)
+	templateColorTimeHandler := templatecolortime.NewTemplateColorTimeHandler(templateColorTimeService)
 
 	router := gin.Default()
 
 	colortime.RegisterRoutes(router, colorTimeHandler)
 	default_colortime.RegisterRoutes(router, defaultColorTimeHandler)
+	templatecolortime.RegisterRoutes(router, templateColorTimeHandler)
 
 	server := &http.Server{
 		Addr:    ":" + cfg.Port,
