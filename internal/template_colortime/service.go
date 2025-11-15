@@ -5,6 +5,7 @@ import (
 	"colortime-service/internal/term"
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -84,7 +85,7 @@ func (s *templateColorTimeService) CreateTemplateColorTime(ctx context.Context, 
 	}
 
 	var baseBlockID *primitive.ObjectID
-
+	
 	if colortimeTemplateData == nil {
 		colortimeTemplateData = &TemplateColorTime{
 			ID:             primitive.NewObjectID(),
@@ -462,45 +463,63 @@ func (s *templateColorTimeService) ApplyTemplateColorTime(ctx context.Context, r
 		if !exists || template == nil {
 			continue // Skip if no template for this weekday
 		}
-		// Create default colortime for each block and slot in the template
-		defaultColorTime := &default_colortime.DefaultDayColorTime{
-			ID:             primitive.NewObjectID(),
-			OrganizationID: req.OrganizationID,
-			Date:           currentDate,
-			TimeSlots:      []*default_colortime.DefaultColorBlock{},
-			CreatedBy:      userID,
-			CreatedAt:      time.Now(),
-			UpdatedAt:      time.Now(),
-			IsBaseTemplate: false,
-			RepeatType:     "none",
+
+		// Check if default colortime already exists for this date
+		existingDefaultColorTime, err := s.DefaultColorTimeRepository.GetDefaultDayColorTime(ctx, currentDate, req.OrganizationID)
+		if err != nil {
+			return errors.New("failed to get existing default color time")
 		}
-		for _, block := range template.ColorTimes {
-			// Create default colortime directly in repository
-			colorBlock := &default_colortime.DefaultColorBlock{
-				BlockID: primitive.NewObjectID(),
-				Slots:   []*default_colortime.DefaultColortimeSlot{},
+
+		if existingDefaultColorTime != nil {
+			existingDefaultColorTime.TimeSlots = mergeTemplateIntoDefault(existingDefaultColorTime, template)
+			existingDefaultColorTime.UpdatedAt = time.Now()
+			if err := s.DefaultColorTimeRepository.UpdateDefaultDayColorTime(ctx, existingDefaultColorTime.ID, existingDefaultColorTime); err != nil {
+				return errors.New("failed to update default color time")
 			}
-			defaultColorTime.TimeSlots = append(defaultColorTime.TimeSlots, colorBlock)
-			for _, slot := range block.Slots {
-				// Create block and slot
-				colorSlot := &default_colortime.DefaultColortimeSlot{
-					SlotID:    primitive.NewObjectID(),
-					StartTime: slot.StartTime,
-					EndTime:   slot.EndTime,
-					Duration:  slot.Duration,
-					Title:     slot.Title,
-					Color:     slot.Color,
-					Note:      slot.Note,
-					CreatedAt: time.Now(),
-					UpdatedAt: time.Now(),
+		} else {
+			// Create new default colortime by copying template structure
+			defaultColorTime := &default_colortime.DefaultDayColorTime{
+				ID:             primitive.NewObjectID(),
+				OrganizationID: req.OrganizationID,
+				Date:           currentDate,
+				TimeSlots:      []*default_colortime.DefaultColorBlock{},
+				CreatedBy:      userID,
+				CreatedAt:      time.Now(),
+				UpdatedAt:      time.Now(),
+				IsBaseTemplate: false,
+				RepeatType:     "none",
+			}
+
+			// Copy all blocks and slots from template to default
+			for _, templateBlock := range template.ColorTimes {
+				colorBlock := &default_colortime.DefaultColorBlock{
+					BlockID: templateBlock.BlockID, // Generate new block ID
+					Slots:   []*default_colortime.DefaultColortimeSlot{},
 				}
 
-				colorBlock.Slots = append(colorBlock.Slots, colorSlot)
+				for _, templateSlot := range templateBlock.Slots {
+					colorSlot := &default_colortime.DefaultColortimeSlot{
+						SlotID:    templateSlot.SlotID, // Generate new slot ID
+						Sessions:  templateSlot.Sessions,
+						Title:     templateSlot.Title,
+						StartTime: templateSlot.StartTime,
+						EndTime:   templateSlot.EndTime,
+						Duration:  templateSlot.Duration,
+						Color:     templateSlot.Color,
+						Note:      templateSlot.Note,
+						CreatedAt: time.Now(),
+						UpdatedAt: time.Now(),
+					}
+					colorBlock.Slots = append(colorBlock.Slots, colorSlot)
+				}
+
+				defaultColorTime.TimeSlots = append(defaultColorTime.TimeSlots, colorBlock)
 			}
-		}
-		if err := s.DefaultColorTimeRepository.CreateDefaultDayColorTime(ctx, defaultColorTime); err != nil {
-			// Log error but continue with next slot
-			continue
+
+			// Create the new default colortime document
+			if err := s.DefaultColorTimeRepository.CreateDefaultDayColorTime(ctx, defaultColorTime); err != nil {
+				continue // Continue to next date if creation fails
+			}
 		}
 	}
 
@@ -568,4 +587,99 @@ func (s *templateColorTimeService) createDuplicateTemplate(sourceTemplate *Templ
 	}
 
 	return duplicate
+}
+
+func mergeTemplateIntoDefault(existingDefaultColorTime *default_colortime.DefaultDayColorTime, template *TemplateColorTime) []*default_colortime.DefaultColorBlock {
+	merged := []*default_colortime.DefaultColorBlock{}
+
+	defaultMap := make(map[string]*default_colortime.DefaultColorBlock)
+	for _, block := range existingDefaultColorTime.TimeSlots {
+		defaultMap[block.BlockID.Hex()] = block
+	}
+
+	for _, block := range template.ColorTimes {
+		defKey := block.BlockID.Hex()
+		if db, exists := defaultMap[defKey]; exists {
+			db.Slots = mergeSlots(db.Slots, block.Slots)
+			merged = append(merged, db)
+			delete(defaultMap, defKey)
+
+		} else {
+			newBlock := cloneTemplateBlockToDefault(block)
+			merged = append(merged, newBlock)
+		}
+	}
+
+for _, remaining := range defaultMap {
+	fmt.Printf("→ Keeping existing block (not in template): %s\n", remaining.BlockID.Hex())
+	merged = append(merged, remaining)
+}
+
+	return merged
+}
+
+func mergeSlots(existingSlots []*default_colortime.DefaultColortimeSlot, templateSlots []*ColortimeSlot) []*default_colortime.DefaultColortimeSlot {
+	merged := []*default_colortime.DefaultColortimeSlot{}
+
+	defaultMap := make(map[string]*default_colortime.DefaultColortimeSlot)
+	for _, s := range existingSlots {
+		key := s.SlotID.Hex()
+		defaultMap[key] = s
+	}
+
+	for _, ts := range templateSlots {
+
+		key := ts.SlotID.Hex()
+
+		if ds, exists := defaultMap[key]; exists {
+
+			// Update template fields but keep user custom fields
+			ds.Title = ts.Title
+			ds.StartTime = ts.StartTime
+			ds.EndTime = ts.EndTime
+			ds.Duration = ts.Duration
+			ds.Color = ts.Color
+			ds.Sessions = ts.Sessions
+			ds.UpdatedAt = time.Now()
+
+			merged = append(merged, ds)
+			delete(defaultMap, key)
+
+		} else {
+			// new slot from template
+			newSlot := cloneTemplateSlotToDefault(ts)
+			merged = append(merged, newSlot)
+		}
+	}
+
+	return merged
+}
+
+func cloneTemplateBlockToDefault(templateBlock *ColorTimeTemplate) *default_colortime.DefaultColorBlock {
+	block := &default_colortime.DefaultColorBlock{
+		BlockID: primitive.NewObjectID(), // Generate new ID for default
+		Slots:   []*default_colortime.DefaultColortimeSlot{},
+	}
+
+	for _, templateSlot := range templateBlock.Slots {
+		slot := cloneTemplateSlotToDefault(templateSlot)
+		block.Slots = append(block.Slots, slot)
+	}
+
+	return block
+}
+
+func cloneTemplateSlotToDefault(templateSlot *ColortimeSlot) *default_colortime.DefaultColortimeSlot {
+	return &default_colortime.DefaultColortimeSlot{
+		SlotID:    primitive.NewObjectID(), // Generate new ID for default
+		Sessions:  templateSlot.Sessions,
+		Title:     templateSlot.Title,
+		StartTime: templateSlot.StartTime,
+		EndTime:   templateSlot.EndTime,
+		Duration:  templateSlot.Duration,
+		Color:     templateSlot.Color,
+		Note:      templateSlot.Note,
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
 }
