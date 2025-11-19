@@ -110,7 +110,7 @@ func (s *templateColorTimeService) CreateTemplateColorTime(ctx context.Context, 
 			Title:     req.Title,
 			StartTime: startTime,
 			EndTime:   endTime,
-			Duration:  req.Duration / 60, // Convert to minutes for storage
+			Duration:  req.Duration, // Convert to minutes for storage
 			Color:     req.Color,
 			Note:      req.Note,
 			CreatedAt: time.Now(),
@@ -144,7 +144,7 @@ func (s *templateColorTimeService) CreateTemplateColorTime(ctx context.Context, 
 			}
 
 			// Convert duration from seconds to minutes for database storage
-			durationMinutes := req.Duration / 60
+			durationMinutes := req.Duration
 			baseSlot := &ColortimeSlot{
 				SlotID:    primitive.NewObjectID(),
 				Title:     req.Title,
@@ -173,7 +173,7 @@ func (s *templateColorTimeService) CreateTemplateColorTime(ctx context.Context, 
 			baseBlockID = &newBlock.BlockID
 
 			// Convert duration from seconds to minutes for database storage
-			durationMinutes := req.Duration / 60
+			durationMinutes := req.Duration
 			baseSlot := &ColortimeSlot{
 				SlotID:    primitive.NewObjectID(),
 				Sessions:  1,
@@ -325,7 +325,7 @@ func (s *templateColorTimeService) UpdateTemplateColorTimeSlot(ctx context.Conte
 		}
 		if req.Duration > 0 {
 			// Convert duration from seconds to minutes for storage
-			durationMinutes := req.Duration / 60
+			durationMinutes := req.Duration 
 			targetSlot.Duration = durationMinutes
 			targetSlot.EndTime = targetSlot.StartTime.Add(time.Duration(req.Duration) * time.Second)
 		}
