@@ -34,3 +34,12 @@ type UpdateTemplateColorTimeSlotRequest struct {
 	Note      string `json:"note"`
 	BlockID   string `json:"block_id"`
 }
+
+type CopySlotToTemplateColorTimeRequest struct {
+	OrganizationID string  `json:"organization_id" binding:"required"`
+	TermID         string  `json:"term_id" binding:"required"`
+	SlotID         *string `json:"slot_id"`
+	BlockIDTarget  *string `json:"block_id_target"`
+	OriginDate     string  `json:"origin_date" binding:"required"`
+	TargetDate     string  `json:"target_date" binding:"required"`
+}

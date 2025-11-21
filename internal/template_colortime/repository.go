@@ -13,6 +13,7 @@ type TemplateColorTimeRepository interface {
 	GetTemplateColorTime(ctx context.Context, organizationID, termID, date string) (*TemplateColorTime, error)
 	GetTemplateColorTimeByID(ctx context.Context, id primitive.ObjectID) (*TemplateColorTime, error)
 	UpdateTemplateColorTime(ctx context.Context, id primitive.ObjectID, colortimeTemplate *TemplateColorTime) error
+	DeleteTemplateColorTime(ctx context.Context, id primitive.ObjectID) error
 }
 
 type templateColorTimeRepository struct {
@@ -64,5 +65,10 @@ func (r *templateColorTimeRepository) GetTemplateColorTimeByID(ctx context.Conte
 
 func (r *templateColorTimeRepository) UpdateTemplateColorTime(ctx context.Context, id primitive.ObjectID, colortimeTemplate *TemplateColorTime) error {
 	_, err := r.TemplateColorTimeCollection.UpdateOne(ctx, bson.M{"_id": id}, bson.M{"$set": colortimeTemplate})
+	return err
+}
+
+func (r *templateColorTimeRepository) DeleteTemplateColorTime(ctx context.Context, id primitive.ObjectID) error {
+	_, err := r.TemplateColorTimeCollection.DeleteOne(ctx, bson.M{"_id": id})
 	return err
 }

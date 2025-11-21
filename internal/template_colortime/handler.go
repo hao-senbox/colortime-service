@@ -219,3 +219,76 @@ func (h *TemplateColorTimeHandler) UpdateTemplateColorTimeSlot(c *gin.Context) {
 
 	helper.SendSuccess(c, http.StatusOK, "template color time slot updated successfully", nil)
 }
+
+func (h *TemplateColorTimeHandler) DeleteTemplateColorTimeSlot(c *gin.Context) {
+	templateColorTimeID := c.Param("id")
+	if templateColorTimeID == "" {
+		helper.SendError(c, http.StatusBadRequest, errors.New("template color time id is required"), nil)
+		return
+	}
+
+	slotID := c.Param("slot_id")
+	if slotID == "" {
+		helper.SendError(c, http.StatusBadRequest, errors.New("slot id is required"), nil)
+		return
+	}
+	
+	userID, exists := c.Get(constants.UserID)
+	if !exists {
+		helper.SendError(c, http.StatusUnauthorized, errors.New("user ID not found in context"), nil)
+		return
+	}
+	
+	
+	token, exists := c.Get(constants.Token)
+	if !exists {
+		helper.SendError(c, 400, fmt.Errorf("token not found"), nil)
+		return
+	}
+
+	ctx := context.WithValue(c, constants.TokenKey, token)
+
+	err := h.TemplateColorTimeService.DeleteTemplateColorTimeSlot(ctx, templateColorTimeID, slotID, userID.(string))
+	if err != nil {
+		helper.SendError(c, http.StatusInternalServerError, err, nil)
+		return
+	}
+
+	helper.SendSuccess(c, http.StatusOK, "template color time slot deleted successfully", nil)
+}
+
+func (h *TemplateColorTimeHandler) CopySlotToTemplateColorTime(c *gin.Context) {
+	blockID := c.Param("block_id")
+	if blockID == "" {
+		helper.SendError(c, http.StatusBadRequest, errors.New("block id is required"), nil)
+		return
+	}
+
+	var request CopySlotToTemplateColorTimeRequest
+	if err := c.ShouldBindJSON(&request); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	userID, exists := c.Get(constants.UserID)
+	if !exists {
+		helper.SendError(c, http.StatusUnauthorized, errors.New("user ID not found in context"), nil)
+		return
+	}
+
+	token, exists := c.Get(constants.Token)
+	if !exists {
+		helper.SendError(c, http.StatusUnauthorized, errors.New("token not found in context"), nil)
+		return
+	}
+
+	ctx := context.WithValue(c, constants.TokenKey, token)
+
+	err := h.TemplateColorTimeService.CopySlotToTemplateColorTime(ctx, blockID, &request, userID.(string))
+	if err != nil {
+		helper.SendError(c, http.StatusInternalServerError, err, nil)
+		return
+	}
+
+	helper.SendSuccess(c, http.StatusOK, "block copied to template color time successfully", nil)
+}

@@ -13,6 +13,8 @@ func RegisterRoutes(r *gin.Engine, templateColorTimeHandler *TemplateColorTimeHa
 		templateColorTime.POST("", templateColorTimeHandler.CreateTemplateColorTime)
 		templateColorTime.POST("/duplicate", templateColorTimeHandler.DuplicateTemplateColorTime)
 		templateColorTime.POST("/apply-template", templateColorTimeHandler.ApplyTemplateColorTime)
+		templateColorTime.PUT("/copy-slot/:block_id", templateColorTimeHandler.CopySlotToTemplateColorTime)
 		templateColorTime.PUT("/:id/update-slot/:slot_id", templateColorTimeHandler.UpdateTemplateColorTimeSlot)
+		templateColorTime.DELETE("/:id/delete-slot/:slot_id", templateColorTimeHandler.DeleteTemplateColorTimeSlot)
 	}
 }
