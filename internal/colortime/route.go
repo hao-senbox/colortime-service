@@ -17,5 +17,7 @@ func RegisterRoutes(r *gin.Engine, colorTimeHandler *ColorTimeHandler) {
 		colorTime.DELETE("/delete-topic/day/:id", colorTimeHandler.DeleteTopicToColorTimeDay)
 
 		colorTime.PUT("/week/:week_colortime_id/slot/:slot_id", colorTimeHandler.UpdateColorSlotHandler)
+
+		colorTime.GET("/day", colorTimeHandler.GetColorTimeDay)
 	}
 }

@@ -67,3 +67,7 @@ type BlockResponse struct {
 	BlockIDOld primitive.ObjectID `json:"block_id_old"`
 	Slots      []*SlotResponse    `json:"slots"`
 }
+
+type ColorTimeDayResponse struct {
+	
+}

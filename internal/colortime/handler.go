@@ -242,3 +242,45 @@ func (h *ColorTimeHandler) UpdateColorSlotHandler(c *gin.Context) {
 	helper.SendSuccess(c, http.StatusOK, "color slot updated successfully", nil)
 	
 }
+
+func (h *ColorTimeHandler) GetColorTimeDay(c *gin.Context) {
+	orgID := c.Query("org_id")
+	if orgID == "" {
+		helper.SendError(c, http.StatusBadRequest, errors.New("org_id is required"), nil)
+		return
+	}
+
+	date := c.Query("date")
+	if date == "" {
+		helper.SendError(c, http.StatusBadRequest, errors.New("date is required"), nil)
+		return
+	}
+
+	userID := c.Query("user_id")
+	if userID == "" {
+		helper.SendError(c, http.StatusBadRequest, errors.New("user_id is required"), nil)
+		return
+	}
+
+	role := c.Query("role")
+	if role == "" {
+		helper.SendError(c, http.StatusBadRequest, errors.New("role is required"), nil)
+		return
+	}
+	
+	token, exists := c.Get(constants.Token)
+	if !exists {
+		helper.SendError(c, 400, fmt.Errorf("token not found"), nil)
+		return
+	}
+
+	ctx := context.WithValue(c, constants.TokenKey, token)
+
+	data, err := h.ColorTimeService.GetColorTimeDay(ctx, orgID, date, userID, role)
+	if err != nil {
+		helper.SendError(c, http.StatusInternalServerError, err, nil)
+		return
+	}
+
+	helper.SendSuccess(c, http.StatusOK, "color time day retrieved successfully", data)
+}

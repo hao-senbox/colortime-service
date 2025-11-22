@@ -16,6 +16,8 @@ type ColorTimeRepository interface {
 	UpdateColorTimeWeek(ctx context.Context, id primitive.ObjectID, colortimeWeek *WeekColorTime) error
 	CountTrackingUsage(ctx context.Context, organizationID, userID, role, tracking string) (int, error)
 	GetAllSlotsByTracking(ctx context.Context, organizationID, userID, role, tracking string) ([]*ColortimeSlot, []*WeekColorTime, error)
+
+	GetWeekByDate(ctx context.Context, date time.Time, organizationID, userID, role string) (*WeekColorTime, error)
 }
 
 type colorTimeRepository struct {
@@ -155,4 +157,25 @@ func (r *colorTimeRepository) GetAllSlotsByTracking(ctx context.Context, organiz
 	}
 
 	return slots, weeks, nil
+}
+
+func (r *colorTimeRepository) GetWeekByDate(ctx context.Context, date time.Time, organizationID, userID, role string) (*WeekColorTime, error) {
+	
+	filter := bson.M{
+		"organization_id": organizationID,
+		"start_date": bson.M{"$lte": date},
+		"end_date": bson.M{"$gte": date},
+		"owner.owner_id": userID,
+		"owner.owner_role": role,
+	}
+
+	var week WeekColorTime
+	if err := r.ColorTimeCollection.FindOne(ctx, filter).Decode(&week); err != nil {
+		if err == mongo.ErrNoDocuments {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	return &week, nil
 }
