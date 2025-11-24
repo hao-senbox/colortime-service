@@ -104,9 +104,6 @@ func (s *colorTimeService) GetColorTimeWeek(ctx context.Context, userID, role, o
 		return nil, errors.New("start and end date are required")
 	}
 
-	fmt.Println("start", start)
-	fmt.Println("end", end)
-
 	startDate, err := time.Parse("2006-01-02", start)
 	if err != nil {
 		return nil, fmt.Errorf("invalid start date: %w", err)
@@ -219,6 +216,7 @@ func (s *colorTimeService) GetColorTimeWeek(ctx context.Context, userID, role, o
 
 	for _, day := range colortimeWeek.ColorTimes {
 		var dayTopic Topic
+
 		if day.TopicID != nil && *day.TopicID != "" {
 			topic, err := s.TopicService.GetTopicInfor(ctx, *day.TopicID)
 			if err != nil {
@@ -231,6 +229,8 @@ func (s *colorTimeService) GetColorTimeWeek(ctx context.Context, userID, role, o
 				}
 			}
 		}
+
+
 		blockResponses, err := s.convertBlocksWithProductInfo(ctx, day.TimeSlots)
 		if err != nil {
 			return nil, fmt.Errorf("failed to convert blocks for day %v: %w", day.Date, err)
@@ -240,6 +240,7 @@ func (s *colorTimeService) GetColorTimeWeek(ctx context.Context, userID, role, o
 			ID:        day.ID,
 			Date:      day.Date,
 			Topic:     dayTopic,
+			TopicWeek: nil,
 			TimeSlots: blockResponses,
 			CreatedAt: day.CreatedAt,
 			UpdatedAt: day.UpdatedAt,
@@ -498,7 +499,7 @@ func (s *colorTimeService) GetColorTimeDay(ctx context.Context, orgID, date, use
 	if err != nil {
 		return nil, fmt.Errorf("failed to get week range: %w", err)
 	}
-	
+
 	_, err = s.GetColorTimeWeek(ctx, userID, role, orgID, start, end)
 	if err != nil {
 		return nil, err
@@ -513,6 +514,29 @@ func (s *colorTimeService) GetColorTimeDay(ctx context.Context, orgID, date, use
 		return nil, errors.New("color time day not found")
 	}
 
+	var weekTopic Topic
+	if colorTime.TopicID != nil && *colorTime.TopicID != "" {
+		topic, err := s.TopicService.GetTopicInfor(ctx, *colorTime.TopicID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to fetch topic for week: %w", err)
+		}
+		if topic != nil {
+			weekTopic = Topic{
+				ID:   topic.ID,
+				Name: topic.Name,
+				MainImageUrl: topic.MainImageUrl,
+				VideoUrl: topic.VideoUrl,
+			}
+		} else {
+			weekTopic = Topic{
+				ID:   "",
+				Name: "",
+				MainImageUrl: "",
+				VideoUrl: "",
+			}
+		}
+	}
+
 	for _, day := range colorTime.ColorTimes {
 		if sameDay(day.Date, parsedDate) {
 			var dayTopic Topic
@@ -525,6 +549,15 @@ func (s *colorTimeService) GetColorTimeDay(ctx context.Context, orgID, date, use
 					dayTopic = Topic{
 						ID:   topic.ID,
 						Name: topic.Name,
+						MainImageUrl: topic.MainImageUrl,
+						VideoUrl: topic.VideoUrl,
+					}
+				} else {
+					dayTopic = Topic{
+						ID:   "",
+						Name: "",
+						MainImageUrl: "",
+						VideoUrl: "",
 					}
 				}
 			}
@@ -534,10 +567,16 @@ func (s *colorTimeService) GetColorTimeDay(ctx context.Context, orgID, date, use
 				return nil, fmt.Errorf("failed to convert blocks for day %v: %w", day.Date, err)
 			}
 
+			var dayTopicWeek *Topic
+			if weekTopic.ID != "" {
+				dayTopicWeek = &weekTopic
+			}
+
 			return &ColorTimeResponse{
 				ID:        day.ID,
 				Date:      day.Date,
 				Topic:     dayTopic,
+				TopicWeek: dayTopicWeek,
 				TimeSlots: blockResponses,
 				CreatedAt: day.CreatedAt,
 				UpdatedAt: day.UpdatedAt,
@@ -556,7 +595,7 @@ func GetWeekRangeStr(dateStr string) (string, string, error) {
 
 	weekday := int(date.Weekday())
 	if weekday == 0 {
-		weekday = 7 
+		weekday = 7
 	}
 
 	start := date.AddDate(0, 0, -(weekday - 1))
@@ -564,7 +603,6 @@ func GetWeekRangeStr(dateStr string) (string, string, error) {
 
 	return start.Format("2006-01-02"), end.Format("2006-01-02"), nil
 }
-
 
 func sameDay(a, b time.Time) bool {
 	y1, m1, d1 := a.Date()

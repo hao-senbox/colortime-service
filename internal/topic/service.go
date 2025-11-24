@@ -94,10 +94,14 @@ func (s *topicService) GetTopicInfor(ctx context.Context, topicID string) (*Topi
 
 	name, _ := topic["title"].(string)
 	id, _ := topic["id"].(string)
+	mainImageUrl, _ := topic["main_image_url"].(string)
+	videoUrl, _ := topic["video_url"].(string)
 
 	return &Topic{
 		ID:   id,
 		Name: name,
+		MainImageUrl: mainImageUrl,
+		VideoUrl: videoUrl,
 	}, nil
 }
 

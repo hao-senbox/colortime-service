@@ -11,6 +11,7 @@ type ColorTimeResponse struct {
 	ID        primitive.ObjectID `bson:"_id" json:"id"`
 	Date      time.Time          `bson:"date" json:"date"`
 	Topic     Topic              `bson:"topic" json:"topic"`
+	TopicWeek *Topic             `bson:"topic_week,omitempty" json:"topic_week,omitempty"`
 	TimeSlots []*BlockResponse   `bson:"time_slots" json:"time_slots"`
 	CreatedAt time.Time          `bson:"created_at" json:"created_at"`
 	UpdatedAt time.Time          `bson:"updated_at" json:"updated_at"`
@@ -23,7 +24,7 @@ type TopicToColorTimeWeekResponse struct {
 	StartDate      time.Time            `bson:"start_date" json:"start_date"`
 	EndDate        time.Time            `bson:"end_date" json:"end_date"`
 	Topic          Topic                `bson:"topic" json:"topic"`
-	ColorTimes     []*ColorTimeResponse `bson:"colortimes" json:"colortimes"`
+	ColorTimes     []*ColorTimeResponse `bson:"colortimes, " json:"colortimes"`
 	CreatedBy      string               `bson:"created_by" json:"created_by"`
 	CreatedAt      time.Time            `bson:"created_at" json:"created_at"`
 	UpdatedAt      time.Time            `bson:"updated_at" json:"updated_at"`
@@ -32,6 +33,8 @@ type TopicToColorTimeWeekResponse struct {
 type Topic struct {
 	ID   string `json:"id" bson:"_id"`
 	Name string `json:"name" bson:"name"`
+	MainImageUrl string `json:"main_image_url" bson:"main_image_url"`
+	VideoUrl     string `json:"video_url" bson:"video_url"`
 }
 
 type ProductInfo struct {
@@ -69,5 +72,4 @@ type BlockResponse struct {
 }
 
 type ColorTimeDayResponse struct {
-	
 }
