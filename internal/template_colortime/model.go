@@ -24,7 +24,6 @@ type ColorTimeTemplate struct {
 
 type ColortimeSlot struct {
 	SlotID    primitive.ObjectID `json:"slot_id" bson:"slot_id"`
-	Type      string             `json:"type" bson:"type"`
 	Sessions  int                `json:"sessions" bson:"sessions"`
 	Title     string             `json:"title" bson:"title"`
 	StartTime time.Time          `json:"start_time" bson:"start_time"`

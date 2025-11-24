@@ -39,6 +39,19 @@ func NewTemplateColorTimeService(
 	}
 }
 
+func isTimeSlotConflict(newStart, newEnd time.Time, existingSlots []*ColortimeSlot, excludeSlotID *primitive.ObjectID) bool {
+	for _, slot := range existingSlots {
+		if excludeSlotID != nil && slot.SlotID == *excludeSlotID {
+			continue
+		}
+
+		if newStart.Before(slot.EndTime) && newEnd.After(slot.StartTime) {
+			return true
+		}
+	}
+	return false
+}
+
 func (s *templateColorTimeService) CreateTemplateColorTime(ctx context.Context, req CreateTemplateColorTimeRequest, userID string) (*TemplateColorTimeResponse, error) {
 	if req.OrganizationID == "" {
 		return nil, errors.New("organization id is required")
@@ -69,7 +82,6 @@ func (s *templateColorTimeService) CreateTemplateColorTime(ctx context.Context, 
 		return nil, errors.New("invalid start time format (use HH:MM)")
 	}
 
-	// Add duration in seconds directly to start time
 	endTime := startTime.Add(time.Duration(req.Duration) * time.Second)
 
 	if endTime.After(time.Date(2025, 12, 31, 23, 59, 59, 0, time.UTC)) {
@@ -118,6 +130,7 @@ func (s *templateColorTimeService) CreateTemplateColorTime(ctx context.Context, 
 			UpdatedAt: time.Now(),
 		}
 
+		// For new template with new block, no need to check conflict as it's empty
 		block.Slots = append(block.Slots, slot)
 
 		baseBlockID = &block.BlockID
@@ -160,6 +173,17 @@ func (s *templateColorTimeService) CreateTemplateColorTime(ctx context.Context, 
 
 			for _, block := range colortimeTemplateData.ColorTimes {
 				if baseBlockID != nil && block.BlockID == *baseBlockID {
+					// Collect all slots from the entire template to check conflicts across all blocks
+					var allSlots []*ColortimeSlot
+					for _, b := range colortimeTemplateData.ColorTimes {
+						allSlots = append(allSlots, b.Slots...)
+					}
+
+					// Validate time slot conflict across entire template
+					if isTimeSlotConflict(startTime, endTime, allSlots, nil) {
+						return nil, errors.New("time slot conflicts with existing slots in the template")
+					}
+
 					baseSlot.Sessions = len(block.Slots) + 1
 					block.Slots = append(block.Slots, baseSlot)
 					break
@@ -170,7 +194,7 @@ func (s *templateColorTimeService) CreateTemplateColorTime(ctx context.Context, 
 				BlockID: primitive.NewObjectID(),
 				Slots:   []*ColortimeSlot{},
 			}
-			colortimeTemplateData.ColorTimes = append(colortimeTemplateData.ColorTimes, newBlock)
+
 			baseBlockID = &newBlock.BlockID
 
 			// Convert duration from seconds to minutes for database storage
@@ -188,7 +212,21 @@ func (s *templateColorTimeService) CreateTemplateColorTime(ctx context.Context, 
 				UpdatedAt: time.Now(),
 			}
 
+			// Check for conflicts with existing slots across entire template
+			var allSlots []*ColortimeSlot
+			for _, b := range colortimeTemplateData.ColorTimes {
+				allSlots = append(allSlots, b.Slots...)
+			}
+
+			// Validate time slot conflict across entire template
+			if isTimeSlotConflict(startTime, endTime, allSlots, nil) {
+				return nil, errors.New("time slot conflicts with existing slots in the template")
+			}
+
 			newBlock.Slots = append(newBlock.Slots, baseSlot)
+
+			// Add new block to template
+			colortimeTemplateData.ColorTimes = append(colortimeTemplateData.ColorTimes, newBlock)
 		}
 
 		if err := s.TemplateColorTimeRepository.UpdateTemplateColorTime(ctx, colortimeTemplateData.ID, colortimeTemplateData); err != nil {
@@ -247,6 +285,7 @@ func (s *templateColorTimeService) GetTemplateColorTime(ctx context.Context, org
 }
 
 func (s *templateColorTimeService) UpdateTemplateColorTimeSlot(ctx context.Context, templateColorTimeID, slotID string, req *UpdateTemplateColorTimeSlotRequest, userID string) error {
+
 	if templateColorTimeID == "" {
 		return errors.New("template color time id is required")
 	}
@@ -316,19 +355,54 @@ func (s *templateColorTimeService) UpdateTemplateColorTimeSlot(ctx context.Conte
 		targetSlot.Sessions = len(targetBlock.Slots) + 1
 		targetBlock.Slots = append(targetBlock.Slots, targetSlot)
 	} else {
-		if req.StartTime != "" {
-			startTime, err := time.Parse("15:04", req.StartTime)
-			if err != nil {
-				return errors.New("invalid start time format (use HH:MM)")
+		// Find the block containing the target slot
+		for _, block := range templateColorTime.ColorTimes {
+			for _, slot := range block.Slots {
+				if slot.SlotID == targetSlot.SlotID {
+					targetBlock = block
+					break
+				}
 			}
-			targetSlot.StartTime = startTime
-			targetSlot.EndTime = startTime.Add(time.Duration(req.Duration) * time.Second)
+			if targetBlock != nil {
+				break
+			}
 		}
-		if req.Duration > 0 {
-			// Convert duration from seconds to minutes for storage
-			durationMinutes := req.Duration
-			targetSlot.Duration = durationMinutes
-			targetSlot.EndTime = targetSlot.StartTime.Add(time.Duration(req.Duration) * time.Second)
+
+		if req.StartTime != "" || req.Duration > 0 {
+			var newStartTime time.Time
+			var newDuration int
+
+			if req.StartTime != "" {
+				startTime, err := time.Parse("15:04", req.StartTime)
+				if err != nil {
+					return errors.New("invalid start time format (use HH:MM)")
+				}
+				newStartTime = startTime
+			} else {
+				newStartTime = targetSlot.StartTime
+			}
+
+			if req.Duration > 0 {
+				newDuration = req.Duration
+			} else {
+				newDuration = targetSlot.Duration
+			}
+
+			newEndTime := newStartTime.Add(time.Duration(newDuration) * time.Second)
+
+			// Check for conflicts with all slots in the entire template
+			var allSlots []*ColortimeSlot
+			for _, block := range templateColorTime.ColorTimes {
+				allSlots = append(allSlots, block.Slots...)
+			}
+
+			if isTimeSlotConflict(newStartTime, newEndTime, allSlots, &targetSlot.SlotID) {
+				return errors.New("time slot conflicts with existing slots in the template")
+			}
+
+			targetSlot.StartTime = newStartTime
+			targetSlot.EndTime = newEndTime
+			targetSlot.Duration = newDuration
 		}
 		if req.Title != "" {
 			targetSlot.Title = req.Title
@@ -408,8 +482,8 @@ func (s *templateColorTimeService) DeleteTemplateColorTimeSlot(ctx context.Conte
 	return nil
 }
 
-
 func (s *templateColorTimeService) DuplicateTemplateColorTime(ctx context.Context, req DuplicateTemplateColorTimeRequest, userID string) error {
+
 	if req.OrganizationID == "" {
 		return errors.New("organization id is required")
 	}
@@ -467,6 +541,7 @@ func (s *templateColorTimeService) DuplicateTemplateColorTime(ctx context.Contex
 }
 
 func (s *templateColorTimeService) ApplyTemplateColorTime(ctx context.Context, req ApplyTemplateColorTimeRequest, userID string) error {
+
 	if req.OrganizationID == "" {
 		return errors.New("organization id is required")
 	}
@@ -721,6 +796,18 @@ func (s *templateColorTimeService) CopySlotToTemplateColorTime(ctx context.Conte
 			return errors.New("slot not found in block")
 		}
 
+		// Calculate time offset based on base_hour
+		var timeOffset time.Duration
+		if req.BaseHour != nil {
+			sourceHour := sourceSlot.StartTime.Hour()
+			hourDiff := *req.BaseHour - sourceHour
+			timeOffset = time.Duration(hourDiff) * time.Hour
+		}
+
+		// Calculate new start and end times with offset
+		newStartTime := sourceSlot.StartTime.Add(timeOffset)
+		newEndTime := sourceSlot.EndTime.Add(timeOffset)
+
 		// Find or create target block
 		var targetBlock *ColorTimeTemplate
 		for _, block := range targetTemplate.ColorTimes {
@@ -739,14 +826,23 @@ func (s *templateColorTimeService) CopySlotToTemplateColorTime(ctx context.Conte
 			targetTemplate.ColorTimes = append(targetTemplate.ColorTimes, targetBlock)
 		}
 
+		// Check for time conflict with existing slots in entire target template
+		var allTargetSlots []*ColortimeSlot
+		for _, block := range targetTemplate.ColorTimes {
+			allTargetSlots = append(allTargetSlots, block.Slots...)
+		}
+
+		if isTimeSlotConflict(newStartTime, newEndTime, allTargetSlots, nil) {
+			return errors.New("copied slot conflicts with existing slots in target template")
+		}
+
 		// Copy slot to target block
 		copiedSlot := &ColortimeSlot{
 			SlotID:    primitive.NewObjectID(),
-			Type:      sourceSlot.Type,
 			Sessions:  sourceSlot.Sessions,
 			Title:     sourceSlot.Title,
-			StartTime: sourceSlot.StartTime,
-			EndTime:   sourceSlot.EndTime,
+			StartTime: newStartTime,
+			EndTime:   newEndTime,
 			Duration:  sourceSlot.Duration,
 			Color:     sourceSlot.Color,
 			Note:      sourceSlot.Note,
@@ -764,14 +860,36 @@ func (s *templateColorTimeService) CopySlotToTemplateColorTime(ctx context.Conte
 		}
 
 		// Copy all slots from source block
+		// First collect all slots from target template to check conflicts
+		var allTargetSlots []*ColortimeSlot
+		for _, block := range targetTemplate.ColorTimes {
+			allTargetSlots = append(allTargetSlots, block.Slots...)
+		}
+
 		for _, sourceSlot := range sourceBlock.Slots {
+			// Calculate time offset based on base_hour for each slot
+			var timeOffset time.Duration
+			if req.BaseHour != nil {
+				sourceHour := sourceSlot.StartTime.Hour()
+				hourDiff := *req.BaseHour - sourceHour
+				timeOffset = time.Duration(hourDiff) * time.Hour
+			}
+
+			// Calculate new start and end times with offset
+			newStartTime := sourceSlot.StartTime.Add(timeOffset)
+			newEndTime := sourceSlot.EndTime.Add(timeOffset)
+
+			// Check for conflict across entire target template
+			if isTimeSlotConflict(newStartTime, newEndTime, allTargetSlots, nil) {
+				return errors.New("one or more slots in the copied block conflict with existing slots in target template")
+			}
+
 			copiedSlot := &ColortimeSlot{
 				SlotID:    primitive.NewObjectID(),
-				Type:      sourceSlot.Type,
 				Sessions:  sourceSlot.Sessions,
 				Title:     sourceSlot.Title,
-				StartTime: sourceSlot.StartTime,
-				EndTime:   sourceSlot.EndTime,
+				StartTime: newStartTime,
+				EndTime:   newEndTime,
 				Duration:  sourceSlot.Duration,
 				Color:     sourceSlot.Color,
 				Note:      sourceSlot.Note,
