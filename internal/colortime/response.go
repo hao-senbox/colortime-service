@@ -77,8 +77,8 @@ type WeekTopicInfo struct {
 	EndDate      time.Time `json:"end_date"`
 	TopicID      string    `json:"topic_id"`
 	TopicName    string    `json:"topic_name"`
-	MainImageUrl string    `json:"main_image_url,omitempty"`
-	VideoUrl     string    `json:"video_url,omitempty"`
+	MainImageUrl string    `json:"main_image_url"`
+	VideoUrl     string    `json:"video_url"`
 }
 
 type TopicByTermResponse struct {
