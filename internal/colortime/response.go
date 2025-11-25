@@ -72,13 +72,20 @@ type BlockResponse struct {
 }
 
 type WeekTopicInfo struct {
-	WeekNumber   int       `json:"week_number"`
-	StartDate    time.Time `json:"start_date"`
-	EndDate      time.Time `json:"end_date"`
-	TopicID      string    `json:"topic_id"`
-	TopicName    string    `json:"topic_name"`
-	MainImageUrl string    `json:"main_image_url"`
-	VideoUrl     string    `json:"video_url"`
+	WeekNumber   int                   `json:"week_number"`
+	StartDate    time.Time             `json:"start_date"`
+	EndDate      time.Time             `json:"end_date"`
+	TopicID      string                `json:"topic_id"`
+	TopicName    string                `json:"topic_name"`
+	MainImageUrl string                `json:"main_image_url"`
+	VideoUrl     string                `json:"video_url"`
+	Vocabularies []*VocabularyResponse `json:"vocabularies"`
+}
+
+type VocabularyResponse struct {
+	ID           string `json:"id"`
+	Title        string `json:"title"`
+	MainImageUrl string `json:"main_image_url"`
 }
 
 type TopicByTermResponse struct {

@@ -980,6 +980,21 @@ func (s *colorTimeService) GetTopicByTerm(ctx context.Context, termID, orgID, us
 		if colorTimeWeek.TopicID != nil && *colorTimeWeek.TopicID != "" {
 			topic, err := s.TopicService.GetTopicInfor(ctx, *colorTimeWeek.TopicID)
 			if err == nil && topic != nil {
+				// Get vocabularies for this topic
+				var vocabularies []*VocabularyResponse
+				vocabs, vocabErr := s.TopicService.GetVocabularyInforByTopicID(ctx, *colorTimeWeek.TopicID)
+				if vocabErr == nil && vocabs != nil {
+					for _, vocab := range vocabs {
+						vocabularies = append(vocabularies, &VocabularyResponse{
+							ID:           vocab.ID,
+							Title:        vocab.Title,
+							MainImageUrl: vocab.MainImageUrl,
+						})
+					}
+				} else {
+					vocabularies = []*VocabularyResponse{}
+				}
+
 				topicInfo = &WeekTopicInfo{
 					WeekNumber:   weekNum,
 					StartDate:    colorTimeWeek.StartDate,
@@ -988,6 +1003,7 @@ func (s *colorTimeService) GetTopicByTerm(ctx context.Context, termID, orgID, us
 					TopicName:    topic.Name,
 					MainImageUrl: topic.MainImageUrl,
 					VideoUrl:     topic.VideoUrl,
+					Vocabularies: vocabularies,
 				}
 			}
 			// if err != nil or topic == nil -> we silently skip (mimic original behavior)
@@ -1022,5 +1038,3 @@ func (s *colorTimeService) GetTopicByTerm(ctx context.Context, termID, orgID, us
 		UpcomingWeeks:     upcomingWeeks,
 	}, nil
 }
-
-

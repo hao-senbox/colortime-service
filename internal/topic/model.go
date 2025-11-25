@@ -6,3 +6,9 @@ type Topic struct {
 	MainImageUrl string `json:"main_image_url" bson:"main_image_url"`
 	VideoUrl     string `json:"video_url" bson:"video_url"`
 }
+
+type Vocabulary struct {
+	ID           string `json:"id" bson:"_id"`
+	Title        string `json:"title" bson:"title"`
+	MainImageUrl string `json:"main_image_url" bson:"main_image_url"`
+}
