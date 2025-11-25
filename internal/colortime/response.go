@@ -31,8 +31,8 @@ type TopicToColorTimeWeekResponse struct {
 }
 
 type Topic struct {
-	ID   string `json:"id" bson:"_id"`
-	Name string `json:"name" bson:"name"`
+	ID           string `json:"id" bson:"_id"`
+	Name         string `json:"name" bson:"name"`
 	MainImageUrl string `json:"main_image_url" bson:"main_image_url"`
 	VideoUrl     string `json:"video_url" bson:"video_url"`
 }
@@ -71,5 +71,27 @@ type BlockResponse struct {
 	Slots      []*SlotResponse    `json:"slots"`
 }
 
-type ColorTimeDayResponse struct {
+type WeekTopicInfo struct {
+	WeekNumber   int       `json:"week_number"`
+	StartDate    time.Time `json:"start_date"`
+	EndDate      time.Time `json:"end_date"`
+	TopicID      string    `json:"topic_id"`
+	TopicName    string    `json:"topic_name"`
+	MainImageUrl string    `json:"main_image_url,omitempty"`
+	VideoUrl     string    `json:"video_url,omitempty"`
+}
+
+type TopicByTermResponse struct {
+	TermID            string `json:"term_id"`
+	TermName          string `json:"term_name"`
+	CurrentWeekNumber int    `json:"current_week_number"`
+
+	// Tuần trước tuần hiện tại
+	PreviousWeeks []*WeekTopicInfo `json:"previous_weeks"`
+
+	// Tuần hiện tại
+	CurrentWeek *WeekTopicInfo `json:"current_week"`
+
+	// Tuần sau (từ tuần hiện tại tới hết kì)
+	UpcomingWeeks []*WeekTopicInfo `json:"upcoming_weeks"`
 }

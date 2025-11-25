@@ -19,5 +19,6 @@ func RegisterRoutes(r *gin.Engine, colorTimeHandler *ColorTimeHandler) {
 		colorTime.PUT("/week/:week_colortime_id/slot/:slot_id", colorTimeHandler.UpdateColorSlotHandler)
 
 		colorTime.GET("/day", colorTimeHandler.GetColorTimeDay)
+		colorTime.GET("/topic/term", colorTimeHandler.GetTopicByTerm)
 	}
 }

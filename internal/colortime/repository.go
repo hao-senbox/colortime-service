@@ -12,6 +12,7 @@ import (
 type ColorTimeRepository interface {
 	CreateColorTimeWeek(ctx context.Context, colortimeWeek *WeekColorTime) error
 	GetColorTimeWeek(ctx context.Context, startDate, endDate *time.Time, organizationID, userID, role string) (*WeekColorTime, error)
+	GetColorTimeWeeksInRange(ctx context.Context, startDate, endDate *time.Time, organizationID, userID, role string) ([]*WeekColorTime, error)
 	GetColorTimeWeekByID(ctx context.Context, id primitive.ObjectID) (*WeekColorTime, error)
 	UpdateColorTimeWeek(ctx context.Context, id primitive.ObjectID, colortimeWeek *WeekColorTime) error
 	CountTrackingUsage(ctx context.Context, organizationID, userID, role, tracking string) (int, error)
@@ -160,12 +161,12 @@ func (r *colorTimeRepository) GetAllSlotsByTracking(ctx context.Context, organiz
 }
 
 func (r *colorTimeRepository) GetWeekByDate(ctx context.Context, date time.Time, organizationID, userID, role string) (*WeekColorTime, error) {
-	
+
 	filter := bson.M{
-		"organization_id": organizationID,
-		"start_date": bson.M{"$lte": date},
-		"end_date": bson.M{"$gte": date},
-		"owner.owner_id": userID,
+		"organization_id":  organizationID,
+		"start_date":       bson.M{"$lte": date},
+		"end_date":         bson.M{"$gte": date},
+		"owner.owner_id":   userID,
 		"owner.owner_role": role,
 	}
 
@@ -178,4 +179,33 @@ func (r *colorTimeRepository) GetWeekByDate(ctx context.Context, date time.Time,
 	}
 
 	return &week, nil
+}
+
+func (r *colorTimeRepository) GetColorTimeWeeksInRange(ctx context.Context, startDate, endDate *time.Time, organizationID, userID, role string) ([]*WeekColorTime, error) {
+	filter := bson.M{
+		"organization_id":  organizationID,
+		"start_date":       bson.M{"$lte": endDate},
+		"end_date":         bson.M{"$gte": startDate},
+		"owner.owner_id":   userID,
+		"owner.owner_role": role,
+	}
+
+	cursor, err := r.ColorTimeCollection.Find(ctx, filter)
+	if err != nil {
+		return nil, err
+	}
+	defer cursor.Close(ctx)
+
+	var weeks []*WeekColorTime
+	count := 0
+	for cursor.Next(ctx) {
+		var week WeekColorTime
+		if err := cursor.Decode(&week); err != nil {
+			return nil, err
+		}
+		weeks = append(weeks, &week)
+		count++
+	}
+
+	return weeks, nil
 }

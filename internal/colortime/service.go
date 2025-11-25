@@ -4,6 +4,7 @@ import (
 	"colortime-service/internal/default_colortime"
 	"colortime-service/internal/language"
 	"colortime-service/internal/product"
+	"colortime-service/internal/term"
 	"colortime-service/internal/topic"
 	"colortime-service/internal/user"
 	"context"
@@ -24,6 +25,7 @@ type ColorTimeService interface {
 
 	UpdateColorSlot(ctx context.Context, weekColorTimeID, slotID string, req *UpdateColorSlotRequest, userID string) error
 	GetColorTimeDay(ctx context.Context, orgID, date, userID, role string) (*ColorTimeResponse, error)
+	GetTopicByTerm(ctx context.Context, termID, orgID, userID, role string) (*TopicByTermResponse, error)
 }
 
 type colorTimeService struct {
@@ -31,6 +33,7 @@ type colorTimeService struct {
 	DefaultColorTimeRepository default_colortime.DefaultColorTimeRepository
 	ProductService             product.ProductService
 	LanguageService            language.MessageLanguageGateway
+	TermService                term.TermService
 	UserService                user.UserService
 	TopicService               topic.TopicService
 }
@@ -39,6 +42,7 @@ func NewColorTimeService(colorTimeRepository ColorTimeRepository,
 	defaultColorTimeRepository default_colortime.DefaultColorTimeRepository,
 	productService product.ProductService,
 	languageService language.MessageLanguageGateway,
+	termService term.TermService,
 	userService user.UserService,
 	topicService topic.TopicService) ColorTimeService {
 	return &colorTimeService{
@@ -46,6 +50,7 @@ func NewColorTimeService(colorTimeRepository ColorTimeRepository,
 		DefaultColorTimeRepository: defaultColorTimeRepository,
 		ProductService:             productService,
 		LanguageService:            languageService,
+		TermService:                termService,
 		UserService:                userService,
 		TopicService:               topicService,
 	}
@@ -229,7 +234,6 @@ func (s *colorTimeService) GetColorTimeWeek(ctx context.Context, userID, role, o
 				}
 			}
 		}
-
 
 		blockResponses, err := s.convertBlocksWithProductInfo(ctx, day.TimeSlots)
 		if err != nil {
@@ -522,17 +526,17 @@ func (s *colorTimeService) GetColorTimeDay(ctx context.Context, orgID, date, use
 		}
 		if topic != nil {
 			weekTopic = Topic{
-				ID:   topic.ID,
-				Name: topic.Name,
+				ID:           topic.ID,
+				Name:         topic.Name,
 				MainImageUrl: topic.MainImageUrl,
-				VideoUrl: topic.VideoUrl,
+				VideoUrl:     topic.VideoUrl,
 			}
 		} else {
 			weekTopic = Topic{
-				ID:   "",
-				Name: "",
+				ID:           "",
+				Name:         "",
 				MainImageUrl: "",
-				VideoUrl: "",
+				VideoUrl:     "",
 			}
 		}
 	}
@@ -547,17 +551,17 @@ func (s *colorTimeService) GetColorTimeDay(ctx context.Context, orgID, date, use
 				}
 				if topic != nil {
 					dayTopic = Topic{
-						ID:   topic.ID,
-						Name: topic.Name,
+						ID:           topic.ID,
+						Name:         topic.Name,
 						MainImageUrl: topic.MainImageUrl,
-						VideoUrl: topic.VideoUrl,
+						VideoUrl:     topic.VideoUrl,
 					}
 				} else {
 					dayTopic = Topic{
-						ID:   "",
-						Name: "",
+						ID:           "",
+						Name:         "",
 						MainImageUrl: "",
-						VideoUrl: "",
+						VideoUrl:     "",
 					}
 				}
 			}
@@ -906,3 +910,117 @@ func cloneSlot(s *ColortimeSlot) *ColortimeSlot {
 	newSlot.SlotID = primitive.NewObjectID()
 	return &newSlot
 }
+
+func (s *colorTimeService) GetTopicByTerm(ctx context.Context, termID, orgID, userID, role string) (*TopicByTermResponse, error) {
+	if termID == "" {
+		return nil, errors.New("term id is required")
+	}
+	if orgID == "" {
+		return nil, errors.New("organization id is required")
+	}
+
+	// 1. Get term info
+	term, err := s.TermService.GetTermByID(ctx, termID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get term: %w", err)
+	}
+
+	if term == nil {
+		return nil, errors.New("term not found")
+	}
+
+	startDate, err := time.Parse("2006-01-02", term.StartDate)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse start date: %w", err)
+	}
+
+	endDate, err := time.Parse("2006-01-02", term.EndDate)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse end date: %w", err)
+	}
+
+	// 2. Get current week number (0-based: week 0, 1, 2...)
+	currentWeekNumber := int(time.Since(startDate).Hours() / 168) // 168 hours = 1 week
+
+	// 3. Get all color time weeks for the term
+	colorTimeWeeks, err := s.ColorTimeRepository.GetColorTimeWeeksInRange(ctx, &startDate, &endDate, orgID, userID, role)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get color time week: %w", err)
+	}
+
+	if len(colorTimeWeeks) == 0 {
+		return &TopicByTermResponse{
+			TermID:            termID,
+			TermName:          term.ID,
+			CurrentWeekNumber: currentWeekNumber,
+			PreviousWeeks:     []*WeekTopicInfo{},
+			CurrentWeek:       nil,
+			UpcomingWeeks:     []*WeekTopicInfo{},
+		}, nil
+	}
+
+	var previousWeeks []*WeekTopicInfo
+	var currentWeek *WeekTopicInfo
+	var upcomingWeeks []*WeekTopicInfo
+
+	processedWeeks := make(map[int]bool)
+
+	for _, colorTimeWeek := range colorTimeWeeks {
+		// Calculate which week this colorTimeWeek belongs to
+		weekNum := int(colorTimeWeek.StartDate.Sub(startDate).Hours() / 168)
+
+		// Skip if this week was already processed
+		if processedWeeks[weekNum] {
+			continue
+		}
+		processedWeeks[weekNum] = true
+
+		// Extract topic info
+		var topicInfo *WeekTopicInfo
+		if colorTimeWeek.TopicID != nil && *colorTimeWeek.TopicID != "" {
+			topic, err := s.TopicService.GetTopicInfor(ctx, *colorTimeWeek.TopicID)
+			if err == nil && topic != nil {
+				topicInfo = &WeekTopicInfo{
+					WeekNumber:   weekNum,
+					StartDate:    colorTimeWeek.StartDate,
+					EndDate:      colorTimeWeek.EndDate,
+					TopicID:      topic.ID,
+					TopicName:    topic.Name,
+					MainImageUrl: topic.MainImageUrl,
+					VideoUrl:     topic.VideoUrl,
+				}
+			}
+			// if err != nil or topic == nil -> we silently skip (mimic original behavior)
+		}
+
+		if topicInfo != nil {
+			if weekNum < currentWeekNumber {
+				previousWeeks = append(previousWeeks, topicInfo)
+			} else if weekNum == currentWeekNumber {
+				currentWeek = topicInfo
+			} else {
+				upcomingWeeks = append(upcomingWeeks, topicInfo)
+			}
+		}
+	}
+
+	// Sort weeks by week number
+	sort.Slice(previousWeeks, func(i, j int) bool {
+		return previousWeeks[i].WeekNumber < previousWeeks[j].WeekNumber
+	})
+	sort.Slice(upcomingWeeks, func(i, j int) bool {
+		return upcomingWeeks[i].WeekNumber < upcomingWeeks[j].WeekNumber
+	})
+
+	// 6. Return TopicByTermResponse
+	return &TopicByTermResponse{
+		TermID:            termID,
+		TermName:          term.ID,
+		CurrentWeekNumber: currentWeekNumber,
+		PreviousWeeks:     previousWeeks,
+		CurrentWeek:       currentWeek,
+		UpcomingWeeks:     upcomingWeeks,
+	}, nil
+}
+
+

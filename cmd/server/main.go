@@ -71,7 +71,7 @@ func main() {
 	defaultColorTimeService := default_colortime.NewDefaultColorTimeService(defaultColorTimeRepository, productService, topicService)
 	defaultColorTimeHandler := default_colortime.NewDefaultColorTimeHandler(defaultColorTimeService)
 
-	colorTimeService := colortime.NewColorTimeService(colorTimeRepository, defaultColorTimeRepository, productService, languageService, userService, topicService)
+	colorTimeService := colortime.NewColorTimeService(colorTimeRepository, defaultColorTimeRepository, productService, languageService, termService, userService, topicService)
 	colorTimeHandler := colortime.NewColorTimeHandler(colorTimeService)
 
 	templateColorTimeService := templatecolortime.NewTemplateColorTimeService(templateColorTimeRepository, termService, defaultColorTimeRepository)

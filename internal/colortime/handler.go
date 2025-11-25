@@ -284,3 +284,45 @@ func (h *ColorTimeHandler) GetColorTimeDay(c *gin.Context) {
 
 	helper.SendSuccess(c, http.StatusOK, "color time day retrieved successfully", data)
 }
+
+func (h *ColorTimeHandler) GetTopicByTerm(c *gin.Context) {
+	orgID := c.Query("org_id")
+	if orgID == "" {
+		helper.SendError(c, http.StatusBadRequest, errors.New("org_id is required"), nil)
+		return
+	}
+
+	userID := c.Query("user_id")
+	if userID == "" {
+		helper.SendError(c, http.StatusBadRequest, errors.New("user_id is required"), nil)
+		return
+	}
+
+	role := c.Query("role")
+	if role == "" {
+		helper.SendError(c, http.StatusBadRequest, errors.New("role is required"), nil)
+		return
+	}
+
+	termID := c.Query("term_id")
+	if termID == "" {
+		helper.SendError(c, http.StatusBadRequest, errors.New("term_id is required"), nil)
+		return
+	}
+
+	token, exists := c.Get(constants.Token)
+	if !exists {
+		helper.SendError(c, 400, fmt.Errorf("token not found"), nil)
+		return
+	}
+
+	ctx := context.WithValue(c, constants.TokenKey, token)
+
+	data, err := h.ColorTimeService.GetTopicByTerm(ctx, termID, orgID, userID, role)
+	if err != nil {
+		helper.SendError(c, http.StatusInternalServerError, err, nil)
+		return
+	}
+
+	helper.SendSuccess(c, http.StatusOK, "topic by term retrieved successfully", data)
+}
