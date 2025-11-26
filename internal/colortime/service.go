@@ -235,7 +235,7 @@ func (s *colorTimeService) GetColorTimeWeek(ctx context.Context, userID, role, o
 			}
 		}
 
-		blockResponses, err := s.convertBlocksWithProductInfo(ctx, day.TimeSlots)
+		blockResponses, err := s.convertBlocksWithProductInfo(ctx, day.TimeSlots, day.Date)
 		if err != nil {
 			return nil, fmt.Errorf("failed to convert blocks for day %v: %w", day.Date, err)
 		}
@@ -566,7 +566,7 @@ func (s *colorTimeService) GetColorTimeDay(ctx context.Context, orgID, date, use
 				}
 			}
 
-			blockResponses, err := s.convertBlocksWithProductInfo(ctx, day.TimeSlots)
+			blockResponses, err := s.convertBlocksWithProductInfo(ctx, day.TimeSlots, day.Date)
 			if err != nil {
 				return nil, fmt.Errorf("failed to convert blocks for day %v: %w", day.Date, err)
 			}
@@ -733,13 +733,36 @@ func (s *colorTimeService) normalizeTrackingGlobal(ctx context.Context, organiza
 
 }
 
-func (s *colorTimeService) convertBlocksWithProductInfo(ctx context.Context, blocks []*ColorBlock) ([]*BlockResponse, error) {
+func (s *colorTimeService) convertBlocksWithProductInfo(ctx context.Context, blocks []*ColorBlock, currentDate time.Time) ([]*BlockResponse, error) {
 	blockResponses := make([]*BlockResponse, 0, len(blocks))
 
 	for _, block := range blocks {
 		slotResponses := make([]*SlotResponse, 0, len(block.Slots))
 
 		for _, slot := range block.Slots {
+			// Combine slot time with current date
+			startDateTime := time.Date(
+				currentDate.Year(),
+				currentDate.Month(),
+				currentDate.Day(),
+				slot.StartTime.Hour(),
+				slot.StartTime.Minute(),
+				slot.StartTime.Second(),
+				slot.StartTime.Nanosecond(),
+				slot.StartTime.Location(),
+			)
+
+			endDateTime := time.Date(
+				currentDate.Year(),
+				currentDate.Month(),
+				currentDate.Day(),
+				slot.EndTime.Hour(),
+				slot.EndTime.Minute(),
+				slot.EndTime.Second(),
+				slot.EndTime.Nanosecond(),
+				slot.EndTime.Location(),
+			)
+
 			slotResponse := &SlotResponse{
 				SlotID:    slot.SlotID,
 				SlotIDOld: *slot.SlotIDOld,
@@ -747,8 +770,8 @@ func (s *colorTimeService) convertBlocksWithProductInfo(ctx context.Context, blo
 				Title:     slot.Title,
 				Tracking:  slot.Tracking,
 				UseCount:  slot.UseCount,
-				StartTime: slot.StartTime,
-				EndTime:   slot.EndTime,
+				StartTime: startDateTime,
+				EndTime:   endDateTime,
 				Duration:  slot.Duration,
 				Color:     slot.Color,
 				Note:      slot.Note,
