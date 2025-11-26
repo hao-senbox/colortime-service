@@ -25,7 +25,7 @@ type ColorTimeService interface {
 
 	UpdateColorSlot(ctx context.Context, weekColorTimeID, slotID string, req *UpdateColorSlotRequest, userID string) error
 	GetColorTimeDay(ctx context.Context, orgID, date, userID, role string) (*ColorTimeResponse, error)
-	GetTopicByTerm(ctx context.Context, termID, orgID, userID, role string) (*TopicByTermResponse, error)
+	GetTopicByTerm(ctx context.Context, orgID, userID, role string) (*TopicByTermResponse, error)
 }
 
 type colorTimeService struct {
@@ -911,16 +911,13 @@ func cloneSlot(s *ColortimeSlot) *ColortimeSlot {
 	return &newSlot
 }
 
-func (s *colorTimeService) GetTopicByTerm(ctx context.Context, termID, orgID, userID, role string) (*TopicByTermResponse, error) {
-	if termID == "" {
-		return nil, errors.New("term id is required")
-	}
+func (s *colorTimeService) GetTopicByTerm(ctx context.Context, orgID, userID, role string) (*TopicByTermResponse, error) {
 	if orgID == "" {
 		return nil, errors.New("organization id is required")
 	}
 
 	// 1. Get term info
-	term, err := s.TermService.GetTermByID(ctx, termID)
+	term, err := s.TermService.GetCurrentTermByOrgID(ctx, orgID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get term: %w", err)
 	}
@@ -950,7 +947,7 @@ func (s *colorTimeService) GetTopicByTerm(ctx context.Context, termID, orgID, us
 
 	if len(colorTimeWeeks) == 0 {
 		return &TopicByTermResponse{
-			TermID:            termID,
+			TermID:            term.ID,
 			TermName:          term.ID,
 			CurrentWeekNumber: currentWeekNumber,
 			PreviousWeeks:     []*WeekTopicInfo{},
@@ -1030,7 +1027,7 @@ func (s *colorTimeService) GetTopicByTerm(ctx context.Context, termID, orgID, us
 
 	// 6. Return TopicByTermResponse
 	return &TopicByTermResponse{
-		TermID:            termID,
+		TermID:            term.ID,
 		TermName:          term.ID,
 		CurrentWeekNumber: currentWeekNumber,
 		PreviousWeeks:     previousWeeks,

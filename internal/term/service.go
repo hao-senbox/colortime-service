@@ -15,6 +15,7 @@ import (
 
 type TermService interface {
 	GetTermByID(ctx context.Context, id string) (*TermInfor, error)
+	GetCurrentTermByOrgID(ctx context.Context, orgID string) (*TermInfor, error)
 }
 
 type termService struct {
@@ -130,6 +131,68 @@ func (c *callAPI) getTermByID(token, id string) (map[string]interface{}, error) 
 		statusCode, _ := parse["status_code"].(float64)
 		errorMsg, _ := parse["error"].(string)
 		log.Printf("[ERROR] Unexpected response format from term service (id=%s). status_code=%v, error=%s, raw=%+v", id, statusCode, errorMsg, parse)
+		return nil, fmt.Errorf("term service returned error (status_code=%v, error=%s)", statusCode, errorMsg)
+	}
+	return dataRaw, nil
+}
+
+func (s *termService) GetCurrentTermByOrgID(ctx context.Context, orgID string) (*TermInfor, error) {
+	token, ok := ctx.Value(constants.TokenKey).(string)
+	if !ok {
+		return nil, fmt.Errorf("token not found in context")
+	}
+
+	data, err := s.client.getCurrentTermByOrgID(token, orgID)
+	if err != nil {
+		log.Printf("[ERROR] termService.GetCurrentTermByOrgID failed (orgID=%s): %v", orgID, err)
+		return nil, err
+	}
+
+	if data == nil {
+		return nil, fmt.Errorf("term not found")
+	}
+
+	termID, _ := data["id"].(string)
+	startDate, _ := data["start_date"].(string)
+	endDate, _ := data["end_date"].(string)
+
+	if termID == "" || startDate == "" || endDate == "" {
+		log.Printf("[ERROR] termService.GetCurrentTermByOrgID invalid data: %+v", data)
+		return nil, fmt.Errorf("invalid term data")
+	}
+
+	return &TermInfor{
+		ID:        termID,
+		StartDate: startDate,
+		EndDate:   endDate,
+	}, nil
+}
+
+func (c *callAPI) getCurrentTermByOrgID(token, orgID string) (map[string]interface{}, error) {
+	endpoint := fmt.Sprintf("/api/v1/gateway/terms/current/%s", orgID)
+
+	headers := map[string]string{
+		"Content-Type":  "application/json",
+		"Authorization": fmt.Sprintf("Bearer %s", token),
+	}
+
+	response, err := c.client.CallAPI(c.clientServer, endpoint, "GET", nil, headers)
+	if err != nil {
+		log.Printf("[ERROR] CallAPI failed: %v", err)
+		return nil, fmt.Errorf("call api term service failed: %w", err)
+	}
+
+	var parse map[string]interface{}
+	if err := json.Unmarshal([]byte(response), &parse); err != nil {
+		log.Printf("[ERROR] JSON unmarshal failed: %v | raw=%s", err, response)
+		return nil, fmt.Errorf("invalid JSON response from term service: %w", err)
+	}
+
+	dataRaw, ok := parse["data"].(map[string]interface{})
+	if !ok {
+		statusCode, _ := parse["status_code"].(float64)
+		errorMsg, _ := parse["error"].(string)
+		log.Printf("[ERROR] Unexpected response format from term service (orgID=%s). status_code=%v, error=%s, raw=%+v", orgID, statusCode, errorMsg, parse)
 		return nil, fmt.Errorf("term service returned error (status_code=%v, error=%s)", statusCode, errorMsg)
 	}
 	fmt.Printf("dataRaw: %v\n", dataRaw)

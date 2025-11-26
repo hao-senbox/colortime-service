@@ -304,12 +304,6 @@ func (h *ColorTimeHandler) GetTopicByTerm(c *gin.Context) {
 		return
 	}
 
-	termID := c.Query("term_id")
-	if termID == "" {
-		helper.SendError(c, http.StatusBadRequest, errors.New("term_id is required"), nil)
-		return
-	}
-
 	token, exists := c.Get(constants.Token)
 	if !exists {
 		helper.SendError(c, 400, fmt.Errorf("token not found"), nil)
@@ -318,7 +312,7 @@ func (h *ColorTimeHandler) GetTopicByTerm(c *gin.Context) {
 
 	ctx := context.WithValue(c, constants.TokenKey, token)
 
-	data, err := h.ColorTimeService.GetTopicByTerm(ctx, termID, orgID, userID, role)
+	data, err := h.ColorTimeService.GetTopicByTerm(ctx, orgID, userID, role)
 	if err != nil {
 		helper.SendError(c, http.StatusInternalServerError, err, nil)
 		return

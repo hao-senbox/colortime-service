@@ -145,7 +145,7 @@ func (s *topicService) GetVocabularyInforByTopicID(ctx context.Context, topicID 
 }
 
 func (c *callAPI) getVocabularyInforByTopicID(topicID, token string) ([]interface{}, error) {
-	endpoint := fmt.Sprintf("/api/v2/gateway/%s/vocabularies", topicID)
+	endpoint := fmt.Sprintf("/api/v2/gateway/topics/%s/vocabularies", topicID)
 
 	header := map[string]string{
 		"Content-Type":  "application/json",
@@ -174,7 +174,7 @@ func (c *callAPI) getVocabularyInforByTopicID(topicID, token string) ([]interfac
 	if !ok {
 		return nil, nil
 	}
-
+	fmt.Println("vocabularyData", vocabularyData)
 	return vocabularyData, nil
 }
 
