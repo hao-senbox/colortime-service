@@ -39,6 +39,19 @@ func NewDefaultColorTimeService(
 	}
 }
 
+func isTimeSlotConflict(newStart, newEnd time.Time, existingSlots []*DefaultColortimeSlot, excludeSlotID *primitive.ObjectID) bool {
+	for _, slot := range existingSlots {
+		if excludeSlotID != nil && slot.SlotID == *excludeSlotID {
+			continue
+		}
+
+		if newStart.Before(slot.EndTime) && newEnd.After(slot.StartTime) {
+			return true
+		}
+	}
+	return false
+}
+
 func (s *defaultColorTimeService) CreateDefaultDayColorTime(ctx context.Context, req *CreateDefaultDayColorTimeRequest, userID string) (*DefaultDayColorTimeResponse, error) {
 
 	if userID == "" {
@@ -247,6 +260,17 @@ func (s *defaultColorTimeService) CreateDefaultDayColorTime(ctx context.Context,
 				UpdatedAt: time.Now(),
 			}
 			slotToAdd = slotCopy
+		}
+
+		// Check for conflicts with existing slots across entire day
+		var allSlots []*DefaultColortimeSlot
+		for _, b := range dayColorTime.TimeSlots {
+			allSlots = append(allSlots, b.Slots...)
+		}
+
+		// Validate time slot conflict across entire day
+		if isTimeSlotConflict(slotToAdd.StartTime, slotToAdd.EndTime, allSlots, nil) {
+			return nil, errors.New("time slot conflicts with existing slots in the day")
 		}
 
 		targetBlock.Slots = append(targetBlock.Slots, slotToAdd)
@@ -472,7 +496,7 @@ func (s *defaultColorTimeService) GetBlockBySlotID(ctx context.Context, dayID, s
 }
 
 func (s *defaultColorTimeService) UpdateDefaultColorSlot(ctx context.Context, dayID, slotID string, req *UpdateDefaultColorSlotRequest) error {
-	
+
 	dayObjectID, err := primitive.ObjectIDFromHex(dayID)
 	if err != nil {
 		return errors.New("invalid day_id format")
