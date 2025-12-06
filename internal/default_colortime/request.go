@@ -60,23 +60,24 @@ type AddSlotToDefaultColorBlockRequest struct {
 }
 
 type UpdateDefaultColorSlotRequest struct {
-	Title     string `json:"title"`
-	StartTime string `json:"start_time"`
-	Duration  int    `json:"duration"`
-	Color     string `json:"color"`
-	Note      string `json:"note"`
+	Title                 string                        `json:"title"`
+	ColorTimeSlotLanguage *DefaultColorTimeSlotLanguage `json:"color_time_slot_language"`
+	StartTime             string                        `json:"start_time"`
+	Duration              int                           `json:"duration"`
+	Color                 string                        `json:"color"`
+	Note                  string                        `json:"note"`
 }
 
 type CreateDefaultDayColorTimeRequest struct {
 	Date           string `json:"date" binding:"required"`
 	OrganizationID string `json:"organization_id" binding:"required"`
 
-
-	StartTime string `json:"start_time" binding:"required"`
-	Duration  int    `json:"duration" binding:"required"`
-	Title     string `json:"title" binding:"required"`
-	Color     string `json:"color" binding:"required"`
-	Note      string `json:"note"`
+	StartTime             string                        `json:"start_time" binding:"required"`
+	Duration              int                           `json:"duration" binding:"required"`
+	Title                 string                        `json:"title" binding:"required"`
+	Color                 string                        `json:"color" binding:"required"`
+	Note                  string                        `json:"note"`
+	ColorTimeSlotLanguage *DefaultColorTimeSlotLanguage `json:"color_time_slot_language"`
 
 	BlockID string `json:"block_id"`
 

@@ -23,14 +23,21 @@ type ColorTimeTemplate struct {
 }
 
 type ColortimeSlot struct {
-	SlotID    primitive.ObjectID `json:"slot_id" bson:"slot_id"`
-	Sessions  int                `json:"sessions" bson:"sessions"`
-	Title     string             `json:"title" bson:"title"`
-	StartTime time.Time          `json:"start_time" bson:"start_time"`
-	EndTime   time.Time          `json:"end_time" bson:"end_time"`
-	Duration  int                `json:"duration" bson:"duration"`
-	Color     string             `json:"color" bson:"color"`
-	Note      string             `json:"note" bson:"note"`
-	CreatedAt time.Time          `json:"created_at" bson:"created_at"`
-	UpdatedAt time.Time          `json:"updated_at" bson:"updated_at"`
+	SlotID                primitive.ObjectID       `json:"slot_id" bson:"slot_id"`
+	Sessions              int                      `json:"sessions" bson:"sessions"`
+	Title                 string                   `json:"title" bson:"title"`
+	ColorTimeSlotLanguage []*ColorTimeSlotLanguage `json:"color_time_slot_language" bson:"color_time_slot_language"`
+	StartTime             time.Time                `json:"start_time" bson:"start_time"`
+	EndTime               time.Time                `json:"end_time" bson:"end_time"`
+	Duration              int                      `json:"duration" bson:"duration"`
+	Color                 string                   `json:"color" bson:"color"`
+	Note                  string                   `json:"note" bson:"note"`
+	CreatedAt             time.Time                `json:"created_at" bson:"created_at"`
+	UpdatedAt             time.Time                `json:"updated_at" bson:"updated_at"`
 }
+
+type ColorTimeSlotLanguage struct {
+	LanguageID int    `json:"language_id" bson:"language_id"`
+	Title      string `json:"title" bson:"title"`
+}
+

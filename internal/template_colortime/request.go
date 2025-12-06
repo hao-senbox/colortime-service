@@ -1,15 +1,16 @@
 package templatecolortime
 
 type CreateTemplateColorTimeRequest struct {
-	OrganizationID string `json:"organization_id" binding:"required"`
-	TermID         string `json:"term_id" binding:"required"`
-	Date           string `json:"date" binding:"required"`
-	StartTime      string `json:"start_time" binding:"required"`
-	Duration       int    `json:"duration" binding:"required"`
-	Title          string `json:"title" binding:"required"`
-	Color          string `json:"color" binding:"required"`
-	Note           string `json:"note"`
-	BlockID        string `json:"block_id"`
+	OrganizationID        string                 `json:"organization_id" binding:"required"`
+	TermID                string                 `json:"term_id" binding:"required"`
+	Date                  string                 `json:"date" binding:"required"`
+	StartTime             string                 `json:"start_time" binding:"required"`
+	Duration              int                    `json:"duration" binding:"required"`
+	Title                 string                 `json:"title" binding:"required"`
+	ColorTimeSlotLanguage *ColorTimeSlotLanguage `json:"color_time_slot_language" binding:"required"`
+	Color                 string                 `json:"color" binding:"required"`
+	Note                  string                 `json:"note"`
+	BlockID               string                 `json:"block_id"`
 }
 
 type DuplicateTemplateColorTimeRequest struct {
@@ -27,12 +28,13 @@ type ApplyTemplateColorTimeRequest struct {
 }
 
 type UpdateTemplateColorTimeSlotRequest struct {
-	StartTime string `json:"start_time" binding:"required"`
-	Duration  int    `json:"duration" binding:"required"`
-	Title     string `json:"title" binding:"required"`
-	Color     string `json:"color" binding:"required"`
-	Note      string `json:"note"`
-	BlockID   string `json:"block_id"`
+	StartTime             string                 `json:"start_time"`
+	Duration              int                    `json:"duration"`
+	Title                 string                 `json:"title"`
+	ColorTimeSlotLanguage *ColorTimeSlotLanguage `json:"color_time_slot_language"`
+	Color                 string                 `json:"color"`
+	Note                  string                 `json:"note"`
+	BlockID               string                 `json:"block_id"`
 }
 
 type CopySlotToTemplateColorTimeRequest struct {

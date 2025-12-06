@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 )
@@ -75,6 +76,14 @@ func (h *DefaultColorTimeHandler) GetDefaultDayColorTime(c *gin.Context) {
 		return
 	}
 
+	languageIDStr := c.Query("language_id")
+	var languageID *int
+	if languageIDStr != "" {
+		if parsedLanguageID, err := strconv.Atoi(languageIDStr); err == nil {
+			languageID = &parsedLanguageID
+		}
+	}
+
 	token, exists := c.Get(constants.Token)
 	if !exists {
 		helper.SendError(c, 400, fmt.Errorf("token not found"), nil)
@@ -83,7 +92,7 @@ func (h *DefaultColorTimeHandler) GetDefaultDayColorTime(c *gin.Context) {
 
 	ctx := context.WithValue(c, constants.TokenKey, token)
 
-	dayColorTime, err := h.DefaultColorTimeService.GetDefaultDayColorTime(ctx, orgID, date, userID.(string))
+	dayColorTime, err := h.DefaultColorTimeService.GetDefaultDayColorTime(ctx, orgID, date, userID.(string), languageID)
 	if err != nil {
 		helper.SendError(c, http.StatusInternalServerError, err, nil)
 		return
@@ -112,6 +121,14 @@ func (h *DefaultColorTimeHandler) GetDefaultDayColorTimesInRange(c *gin.Context)
 		return
 	}
 
+	languageIDStr := c.Query("language_id")
+	var languageID *int
+	if languageIDStr != "" {
+		if parsedLanguageID, err := strconv.Atoi(languageIDStr); err == nil {
+			languageID = &parsedLanguageID
+		}
+	}
+
 	token, exists := c.Get(constants.Token)
 	if !exists {
 		helper.SendError(c, 400, fmt.Errorf("token not found"), nil)
@@ -120,7 +137,7 @@ func (h *DefaultColorTimeHandler) GetDefaultDayColorTimesInRange(c *gin.Context)
 
 	ctx := context.WithValue(c, constants.TokenKey, token)
 
-	dayColorTimes, err := h.DefaultColorTimeService.GetDefaultDayColorTimesInRange(ctx, orgID, startDate, endDate, userID.(string))
+	dayColorTimes, err := h.DefaultColorTimeService.GetDefaultDayColorTimesInRange(ctx, orgID, startDate, endDate, userID.(string), languageID)
 	if err != nil {
 		helper.SendError(c, http.StatusInternalServerError, err, nil)
 		return

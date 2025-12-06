@@ -13,8 +13,9 @@ import (
 
 type TemplateColorTimeService interface {
 	CreateTemplateColorTime(ctx context.Context, req CreateTemplateColorTimeRequest, userID string) (*TemplateColorTimeResponse, error)
-	GetTemplateColorTime(ctx context.Context, organizationID, termID, date string) ([]*TemplateColorTime, error)
+	GetTemplateColorTime(ctx context.Context, organizationID, termID, date string, languageID *int) ([]*TemplateColorTime, error)
 	UpdateTemplateColorTimeSlot(ctx context.Context, templateColorTimeID, slotID string, req *UpdateTemplateColorTimeSlotRequest, userID string) error
+	DeleteTemplateColorTimeBlock(ctx context.Context, templateColorTimeID, blockID string, userID string) error
 	DeleteTemplateColorTimeSlot(ctx context.Context, templateColorTimeID, slotID string, userID string) error
 	DuplicateTemplateColorTime(ctx context.Context, req DuplicateTemplateColorTimeRequest, userID string) error
 	ApplyTemplateColorTime(ctx context.Context, req ApplyTemplateColorTimeRequest, userID string) error
@@ -77,6 +78,18 @@ func (s *templateColorTimeService) CreateTemplateColorTime(ctx context.Context, 
 		return nil, errors.New("color is required")
 	}
 
+	if req.ColorTimeSlotLanguage == nil {
+		return nil, errors.New("color time slot language is required")
+	}
+
+	if req.ColorTimeSlotLanguage.LanguageID == 0 {
+		return nil, errors.New("language id is required")
+	}
+
+	if req.ColorTimeSlotLanguage.Title == "" {
+		return nil, errors.New("title is required")
+	}
+
 	startTime, err := time.Parse("15:04", req.StartTime)
 	if err != nil {
 		return nil, errors.New("invalid start time format (use HH:MM)")
@@ -118,16 +131,17 @@ func (s *templateColorTimeService) CreateTemplateColorTime(ctx context.Context, 
 		colortimeTemplateData.ColorTimes = append(colortimeTemplateData.ColorTimes, block)
 
 		slot := &ColortimeSlot{
-			SlotID:    primitive.NewObjectID(),
-			Sessions:  1,
-			Title:     req.Title,
-			StartTime: startTime,
-			EndTime:   endTime,
-			Duration:  req.Duration, // Convert to minutes for storage
-			Color:     req.Color,
-			Note:      req.Note,
-			CreatedAt: time.Now(),
-			UpdatedAt: time.Now(),
+			SlotID:                primitive.NewObjectID(),
+			Sessions:              1,
+			Title:                 req.Title,
+			ColorTimeSlotLanguage: []*ColorTimeSlotLanguage{req.ColorTimeSlotLanguage},
+			StartTime:             startTime,
+			EndTime:               endTime,
+			Duration:              req.Duration, // Convert to minutes for storage
+			Color:                 req.Color,
+			Note:                  req.Note,
+			CreatedAt:             time.Now(),
+			UpdatedAt:             time.Now(),
 		}
 
 		// For new template with new block, no need to check conflict as it's empty
@@ -157,18 +171,27 @@ func (s *templateColorTimeService) CreateTemplateColorTime(ctx context.Context, 
 				baseBlockID = &id
 			}
 
+			if req.ColorTimeSlotLanguage != nil {
+				if req.ColorTimeSlotLanguage.LanguageID == 0 {
+					return nil, errors.New("language id is required")
+				}
+				if req.ColorTimeSlotLanguage.Title == "" {
+					return nil, errors.New("title is required")
+				}
+			}
 			// Convert duration from seconds to minutes for database storage
 			durationMinutes := req.Duration
 			baseSlot := &ColortimeSlot{
-				SlotID:    primitive.NewObjectID(),
-				Title:     req.Title,
-				StartTime: startTime,
-				EndTime:   startTime.Add(time.Duration(req.Duration) * time.Second), // Add seconds directly
-				Duration:  durationMinutes,                                          // Store as minutes
-				Color:     req.Color,
-				Note:      req.Note,
-				CreatedAt: time.Now(),
-				UpdatedAt: time.Now(),
+				SlotID:                primitive.NewObjectID(),
+				Title:                 req.Title,
+				ColorTimeSlotLanguage: []*ColorTimeSlotLanguage{req.ColorTimeSlotLanguage},
+				StartTime:             startTime,
+				EndTime:               startTime.Add(time.Duration(req.Duration) * time.Second), // Add seconds directly
+				Duration:              durationMinutes,                                          // Store as minutes
+				Color:                 req.Color,
+				Note:                  req.Note,
+				CreatedAt:             time.Now(),
+				UpdatedAt:             time.Now(),
 			}
 
 			for _, block := range colortimeTemplateData.ColorTimes {
@@ -197,19 +220,28 @@ func (s *templateColorTimeService) CreateTemplateColorTime(ctx context.Context, 
 
 			baseBlockID = &newBlock.BlockID
 
+			if req.ColorTimeSlotLanguage != nil {
+				if req.ColorTimeSlotLanguage.LanguageID == 0 {
+					return nil, errors.New("language id is required")
+				}
+				if req.ColorTimeSlotLanguage.Title == "" {
+					return nil, errors.New("title is required")
+				}
+			}
 			// Convert duration from seconds to minutes for database storage
 			durationMinutes := req.Duration
 			baseSlot := &ColortimeSlot{
-				SlotID:    primitive.NewObjectID(),
-				Sessions:  1,
-				Title:     req.Title,
-				StartTime: startTime,
-				EndTime:   startTime.Add(time.Duration(req.Duration) * time.Second), // Add seconds directly
-				Duration:  durationMinutes,                                          // Store as minutes
-				Color:     req.Color,
-				Note:      req.Note,
-				CreatedAt: time.Now(),
-				UpdatedAt: time.Now(),
+				SlotID:                primitive.NewObjectID(),
+				Sessions:              1,
+				Title:                 req.Title,
+				ColorTimeSlotLanguage: []*ColorTimeSlotLanguage{req.ColorTimeSlotLanguage},
+				StartTime:             startTime,
+				EndTime:               startTime.Add(time.Duration(req.Duration) * time.Second), // Add seconds directly
+				Duration:              durationMinutes,                                          // Store as minutes
+				Color:                 req.Color,
+				Note:                  req.Note,
+				CreatedAt:             time.Now(),
+				UpdatedAt:             time.Now(),
 			}
 
 			// Check for conflicts with existing slots across entire template
@@ -248,7 +280,7 @@ func (s *templateColorTimeService) CreateTemplateColorTime(ctx context.Context, 
 
 }
 
-func (s *templateColorTimeService) GetTemplateColorTime(ctx context.Context, organizationID, termID, date string) ([]*TemplateColorTime, error) {
+func (s *templateColorTimeService) GetTemplateColorTime(ctx context.Context, organizationID, termID, date string, languageID *int) ([]*TemplateColorTime, error) {
 	if organizationID == "" {
 		return nil, errors.New("organization id is required")
 	}
@@ -278,6 +310,23 @@ func (s *templateColorTimeService) GetTemplateColorTime(ctx context.Context, org
 		}
 		if template != nil {
 			result = append(result, template)
+		}
+	}
+
+	// Filter by language if provided
+	if languageID != nil {
+		for _, template := range result {
+			for _, block := range template.ColorTimes {
+				for _, slot := range block.Slots {
+					var filteredLanguageTitle []*ColorTimeSlotLanguage
+					for _, lang := range slot.ColorTimeSlotLanguage {
+						if lang.LanguageID == *languageID {
+							filteredLanguageTitle = append(filteredLanguageTitle, lang)
+						}
+					}
+					slot.ColorTimeSlotLanguage = filteredLanguageTitle
+				}
+			}
 		}
 	}
 
@@ -413,8 +462,78 @@ func (s *templateColorTimeService) UpdateTemplateColorTimeSlot(ctx context.Conte
 		if req.Note != "" {
 			targetSlot.Note = req.Note
 		}
+		if req.ColorTimeSlotLanguage != nil {
+			// Check if language already exists in the slot
+			languageExists := false
+			for i, lang := range targetSlot.ColorTimeSlotLanguage {
+				if lang.LanguageID == req.ColorTimeSlotLanguage.LanguageID {
+					// Update existing language title
+					targetSlot.ColorTimeSlotLanguage[i].Title = req.ColorTimeSlotLanguage.Title
+					languageExists = true
+					break
+				}
+			}
+			// If language doesn't exist, append it
+			if !languageExists {
+				targetSlot.ColorTimeSlotLanguage = append(targetSlot.ColorTimeSlotLanguage, req.ColorTimeSlotLanguage)
+			}
+		}
 		targetSlot.UpdatedAt = time.Now()
 	}
+
+	if err := s.TemplateColorTimeRepository.UpdateTemplateColorTime(ctx, templateColorTimeObjectID, templateColorTime); err != nil {
+		return errors.New("failed to update template color time")
+	}
+
+	return nil
+}
+
+func (s *templateColorTimeService) DeleteTemplateColorTimeBlock(ctx context.Context, templateColorTimeID, blockID string, userID string) error {
+	if templateColorTimeID == "" {
+		return errors.New("template color time id is required")
+	}
+
+	if blockID == "" {
+		return errors.New("block id is required")
+	}
+
+	if userID == "" {
+		return errors.New("user id is required")
+	}
+
+	templateColorTimeObjectID, err := primitive.ObjectIDFromHex(templateColorTimeID)
+	if err != nil {
+		return errors.New("invalid template color time id format")
+	}
+
+	templateColorTime, err := s.TemplateColorTimeRepository.GetTemplateColorTimeByID(ctx, templateColorTimeObjectID)
+	if err != nil {
+		return errors.New("failed to get template color time")
+	}
+
+	if templateColorTime == nil {
+		return errors.New("template color time not found")
+	}
+
+	blockObjectID, err := primitive.ObjectIDFromHex(blockID)
+	if err != nil {
+		return errors.New("invalid block id format")
+	}
+
+	var targetBlockIndex = -1
+	for i, block := range templateColorTime.ColorTimes {
+		if block.BlockID == blockObjectID {
+			targetBlockIndex = i
+			break
+		}
+	}
+
+	if targetBlockIndex == -1 {
+		return errors.New("block not found")
+	}
+
+	// Remove the block from slice
+	templateColorTime.ColorTimes = append(templateColorTime.ColorTimes[:targetBlockIndex], templateColorTime.ColorTimes[targetBlockIndex+1:]...)
 
 	if err := s.TemplateColorTimeRepository.UpdateTemplateColorTime(ctx, templateColorTimeObjectID, templateColorTime); err != nil {
 		return errors.New("failed to update template color time")
@@ -621,17 +740,27 @@ func (s *templateColorTimeService) ApplyTemplateColorTime(ctx context.Context, r
 				}
 
 				for _, templateSlot := range templateBlock.Slots {
+					// Convert language data
+					var defaultLanguages []*default_colortime.DefaultColorTimeSlotLanguage
+					for _, lang := range templateSlot.ColorTimeSlotLanguage {
+						defaultLanguages = append(defaultLanguages, &default_colortime.DefaultColorTimeSlotLanguage{
+							LanguageID: lang.LanguageID,
+							Title:      lang.Title,
+						})
+					}
+
 					colorSlot := &default_colortime.DefaultColortimeSlot{
-						SlotID:    templateSlot.SlotID,
-						Sessions:  templateSlot.Sessions,
-						Title:     templateSlot.Title,
-						StartTime: templateSlot.StartTime,
-						EndTime:   templateSlot.EndTime,
-						Duration:  templateSlot.Duration,
-						Color:     templateSlot.Color,
-						Note:      templateSlot.Note,
-						CreatedAt: time.Now(),
-						UpdatedAt: time.Now(),
+						SlotID:                templateSlot.SlotID,
+						Sessions:              templateSlot.Sessions,
+						Title:                 templateSlot.Title,
+						ColorTimeSlotLanguage: defaultLanguages,
+						StartTime:             templateSlot.StartTime,
+						EndTime:               templateSlot.EndTime,
+						Duration:              templateSlot.Duration,
+						Color:                 templateSlot.Color,
+						Note:                  templateSlot.Note,
+						CreatedAt:             time.Now(),
+						UpdatedAt:             time.Now(),
 					}
 					colorBlock.Slots = append(colorBlock.Slots, colorSlot)
 				}
@@ -665,10 +794,19 @@ func (s *templateColorTimeService) ApplyTemplateColorTime(ctx context.Context, r
 				}
 
 				for _, templateSlot := range templateBlock.Slots {
+					// Convert language data
+					var defaultLanguages []*default_colortime.DefaultColorTimeSlotLanguage
+					for _, lang := range templateSlot.ColorTimeSlotLanguage {
+						defaultLanguages = append(defaultLanguages, &default_colortime.DefaultColorTimeSlotLanguage{
+							LanguageID: lang.LanguageID,
+							Title:      lang.Title,
+						})
+					}
 					colorSlot := &default_colortime.DefaultColortimeSlot{
 						SlotID:    templateSlot.SlotID, // Generate new slot ID
 						Sessions:  templateSlot.Sessions,
 						Title:     templateSlot.Title,
+						ColorTimeSlotLanguage: defaultLanguages,
 						StartTime: templateSlot.StartTime,
 						EndTime:   templateSlot.EndTime,
 						Duration:  templateSlot.Duration,
@@ -838,16 +976,17 @@ func (s *templateColorTimeService) CopySlotToTemplateColorTime(ctx context.Conte
 
 		// Copy slot to target block
 		copiedSlot := &ColortimeSlot{
-			SlotID:    primitive.NewObjectID(),
-			Sessions:  sourceSlot.Sessions,
-			Title:     sourceSlot.Title,
-			StartTime: newStartTime,
-			EndTime:   newEndTime,
-			Duration:  sourceSlot.Duration,
-			Color:     sourceSlot.Color,
-			Note:      sourceSlot.Note,
-			CreatedAt: time.Now(),
-			UpdatedAt: time.Now(),
+			SlotID:                primitive.NewObjectID(),
+			Sessions:              sourceSlot.Sessions,
+			Title:                 sourceSlot.Title,
+			ColorTimeSlotLanguage: sourceSlot.ColorTimeSlotLanguage,
+			StartTime:             newStartTime,
+			EndTime:               newEndTime,
+			Duration:              sourceSlot.Duration,
+			Color:                 sourceSlot.Color,
+			Note:                  sourceSlot.Note,
+			CreatedAt:             time.Now(),
+			UpdatedAt:             time.Now(),
 		}
 
 		targetBlock.Slots = append(targetBlock.Slots, copiedSlot)
@@ -885,16 +1024,17 @@ func (s *templateColorTimeService) CopySlotToTemplateColorTime(ctx context.Conte
 			}
 
 			copiedSlot := &ColortimeSlot{
-				SlotID:    primitive.NewObjectID(),
-				Sessions:  sourceSlot.Sessions,
-				Title:     sourceSlot.Title,
-				StartTime: newStartTime,
-				EndTime:   newEndTime,
-				Duration:  sourceSlot.Duration,
-				Color:     sourceSlot.Color,
-				Note:      sourceSlot.Note,
-				CreatedAt: time.Now(),
-				UpdatedAt: time.Now(),
+				SlotID:                primitive.NewObjectID(),
+				Sessions:              sourceSlot.Sessions,
+				Title:                 sourceSlot.Title,
+				ColorTimeSlotLanguage: sourceSlot.ColorTimeSlotLanguage,
+				StartTime:             newStartTime,
+				EndTime:               newEndTime,
+				Duration:              sourceSlot.Duration,
+				Color:                 sourceSlot.Color,
+				Note:                  sourceSlot.Note,
+				CreatedAt:             time.Now(),
+				UpdatedAt:             time.Now(),
 			}
 			copiedBlock.Slots = append(copiedBlock.Slots, copiedSlot)
 		}
@@ -977,16 +1117,17 @@ func (s *templateColorTimeService) createDuplicateTemplate(sourceTemplate *Templ
 
 		for _, slot := range block.Slots {
 			newSlot := &ColortimeSlot{
-				SlotID:    primitive.NewObjectID(),
-				Sessions:  slot.Sessions,
-				Title:     slot.Title,
-				StartTime: slot.StartTime,
-				EndTime:   slot.EndTime,
-				Duration:  slot.Duration,
-				Color:     slot.Color,
-				Note:      slot.Note,
-				CreatedAt: time.Now(),
-				UpdatedAt: time.Now(),
+				SlotID:                primitive.NewObjectID(),
+				Sessions:              slot.Sessions,
+				Title:                 slot.Title,
+				ColorTimeSlotLanguage: slot.ColorTimeSlotLanguage,
+				StartTime:             slot.StartTime,
+				EndTime:               slot.EndTime,
+				Duration:              slot.Duration,
+				Color:                 slot.Color,
+				Note:                  slot.Note,
+				CreatedAt:             time.Now(),
+				UpdatedAt:             time.Now(),
 			}
 			newBlock.Slots = append(newBlock.Slots, newSlot)
 		}

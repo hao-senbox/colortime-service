@@ -13,8 +13,8 @@ import (
 
 type DefaultColorTimeService interface {
 	CreateDefaultDayColorTime(ctx context.Context, req *CreateDefaultDayColorTimeRequest, userID string) (*DefaultDayColorTimeResponse, error)
-	GetDefaultDayColorTime(ctx context.Context, orgID, date, userID string) (*DefaultDayColorTimeResponse, error)
-	GetDefaultDayColorTimesInRange(ctx context.Context, orgID, startDate, endDate, userID string) ([]*DefaultDayColorTimeResponse, error)
+	GetDefaultDayColorTime(ctx context.Context, orgID, date, userID string, languageID *int) (*DefaultDayColorTimeResponse, error)
+	GetDefaultDayColorTimesInRange(ctx context.Context, orgID, startDate, endDate, userID string, languageID *int) ([]*DefaultDayColorTimeResponse, error)
 	GetAllDefaultDayColorTimes(ctx context.Context, orgID string) ([]*DefaultDayColorTimeResponse, error)
 	GetBlockBySlotID(ctx context.Context, dayID, slotID string) (*BlockWithSlotResponse, error)
 	UpdateDefaultColorSlot(ctx context.Context, dayID, slotID string, req *UpdateDefaultColorSlotRequest) error
@@ -82,6 +82,15 @@ func (s *defaultColorTimeService) CreateDefaultDayColorTime(ctx context.Context,
 		return nil, errors.New("color is required")
 	}
 
+	if req.ColorTimeSlotLanguage != nil {
+		if req.ColorTimeSlotLanguage.LanguageID == 0 {
+			return nil, errors.New("language id is required")
+		}
+		if req.ColorTimeSlotLanguage.Title == "" {
+			return nil, errors.New("title is required")
+		}
+	}
+
 	date, err := time.Parse("2006-01-02", req.Date)
 	if err != nil {
 		return nil, fmt.Errorf("invalid date format: %w", err)
@@ -146,16 +155,17 @@ func (s *defaultColorTimeService) CreateDefaultDayColorTime(ctx context.Context,
 	}
 
 	baseSlot := &DefaultColortimeSlot{
-		SlotID:    primitive.NewObjectID(),
-		Sessions:  1,
-		Title:     req.Title,
-		StartTime: startTime,
-		EndTime:   endTime,
-		Duration:  req.Duration,
-		Color:     req.Color,
-		Note:      req.Note,
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
+		SlotID:                primitive.NewObjectID(),
+		Sessions:              1,
+		Title:                 req.Title,
+		ColorTimeSlotLanguage: []*DefaultColorTimeSlotLanguage{req.ColorTimeSlotLanguage},
+		StartTime:             startTime,
+		EndTime:               endTime,
+		Duration:              req.Duration,
+		Color:                 req.Color,
+		Note:                  req.Note,
+		CreatedAt:             time.Now(),
+		UpdatedAt:             time.Now(),
 	}
 
 	var baseDayResult *DefaultDayColorTime
@@ -248,16 +258,17 @@ func (s *defaultColorTimeService) CreateDefaultDayColorTime(ctx context.Context,
 			slotToAdd.Sessions = len(targetBlock.Slots) + 1
 		} else {
 			slotCopy := &DefaultColortimeSlot{
-				SlotID:    primitive.NewObjectID(),
-				Sessions:  len(targetBlock.Slots) + 1,
-				Title:     baseSlot.Title,
-				StartTime: baseSlot.StartTime,
-				EndTime:   baseSlot.EndTime,
-				Duration:  baseSlot.Duration,
-				Color:     baseSlot.Color,
-				Note:      baseSlot.Note,
-				CreatedAt: time.Now(),
-				UpdatedAt: time.Now(),
+				SlotID:                primitive.NewObjectID(),
+				Sessions:              len(targetBlock.Slots) + 1,
+				Title:                 baseSlot.Title,
+				ColorTimeSlotLanguage: baseSlot.ColorTimeSlotLanguage,
+				StartTime:             baseSlot.StartTime,
+				EndTime:               baseSlot.EndTime,
+				Duration:              baseSlot.Duration,
+				Color:                 baseSlot.Color,
+				Note:                  baseSlot.Note,
+				CreatedAt:             time.Now(),
+				UpdatedAt:             time.Now(),
 			}
 			slotToAdd = slotCopy
 		}
@@ -320,7 +331,7 @@ func (s *defaultColorTimeService) CreateDefaultDayColorTime(ctx context.Context,
 	return result, nil
 }
 
-func (s *defaultColorTimeService) GetDefaultDayColorTime(ctx context.Context, orgID, date, userID string) (*DefaultDayColorTimeResponse, error) {
+func (s *defaultColorTimeService) GetDefaultDayColorTime(ctx context.Context, orgID, date, userID string, languageID *int) (*DefaultDayColorTimeResponse, error) {
 	if orgID == "" {
 		return nil, errors.New("organization id is required")
 	}
@@ -343,6 +354,20 @@ func (s *defaultColorTimeService) GetDefaultDayColorTime(ctx context.Context, or
 		return nil, fmt.Errorf("default day color time not found for date: %s", date)
 	}
 
+	if languageID != nil {
+		for _, block := range dayColorTime.TimeSlots {
+			for _, slot := range block.Slots {
+				var filteredLanguageTitle []*DefaultColorTimeSlotLanguage
+				for _, lang := range slot.ColorTimeSlotLanguage {
+					if lang.LanguageID == *languageID {
+						filteredLanguageTitle = append(filteredLanguageTitle, lang)
+					}
+				}
+				slot.ColorTimeSlotLanguage = filteredLanguageTitle
+			}
+		}
+	}
+
 	response := &DefaultDayColorTimeResponse{
 		ID:             dayColorTime.ID,
 		OrganizationID: dayColorTime.OrganizationID,
@@ -361,7 +386,7 @@ func (s *defaultColorTimeService) GetDefaultDayColorTime(ctx context.Context, or
 	return response, nil
 }
 
-func (s *defaultColorTimeService) GetDefaultDayColorTimesInRange(ctx context.Context, orgID, startDate, endDate, userID string) ([]*DefaultDayColorTimeResponse, error) {
+func (s *defaultColorTimeService) GetDefaultDayColorTimesInRange(ctx context.Context, orgID, startDate, endDate, userID string, languageID *int) ([]*DefaultDayColorTimeResponse, error) {
 	if orgID == "" {
 		return nil, errors.New("organization id is required")
 	}
@@ -387,6 +412,19 @@ func (s *defaultColorTimeService) GetDefaultDayColorTimesInRange(ctx context.Con
 
 	var responses []*DefaultDayColorTimeResponse
 	for _, day := range dayColorTimes {
+		if languageID != nil {
+			for _, block := range day.TimeSlots {
+				for _, slot := range block.Slots {
+					var filteredLanguageTitle []*DefaultColorTimeSlotLanguage
+					for _, lang := range slot.ColorTimeSlotLanguage {
+						if lang.LanguageID == *languageID {
+							filteredLanguageTitle = append(filteredLanguageTitle, lang)
+						}
+					}
+					slot.ColorTimeSlotLanguage = filteredLanguageTitle
+				}
+			}
+		}
 		response := &DefaultDayColorTimeResponse{
 			ID:             day.ID,
 			OrganizationID: day.OrganizationID,
@@ -516,6 +554,15 @@ func (s *defaultColorTimeService) UpdateDefaultColorSlot(ctx context.Context, da
 		return fmt.Errorf("day not found")
 	}
 
+	if req.ColorTimeSlotLanguage != nil {
+		if req.ColorTimeSlotLanguage.LanguageID == 0 {
+			return errors.New("language id is required")
+		}
+		if req.ColorTimeSlotLanguage.Title == "" {
+			return errors.New("title is required")
+		}
+	}
+
 	var slotFound bool
 	for _, block := range day.TimeSlots {
 		for _, slot := range block.Slots {
@@ -549,6 +596,20 @@ func (s *defaultColorTimeService) UpdateDefaultColorSlot(ctx context.Context, da
 
 				if newStartTime != nil || req.Duration > 0 {
 					slot.EndTime = slot.StartTime.Add(time.Duration(slot.Duration) * time.Second)
+				}
+
+				if req.ColorTimeSlotLanguage != nil {
+					languageExists := false
+					for i, lang := range slot.ColorTimeSlotLanguage {
+						if lang.LanguageID == req.ColorTimeSlotLanguage.LanguageID {
+							slot.ColorTimeSlotLanguage[i].Title = req.ColorTimeSlotLanguage.Title
+							languageExists = true
+							break
+						}
+					}
+					if !languageExists {
+						slot.ColorTimeSlotLanguage = append(slot.ColorTimeSlotLanguage, req.ColorTimeSlotLanguage)
+					}
 				}
 
 				slot.UpdatedAt = time.Now()

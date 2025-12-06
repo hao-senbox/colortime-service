@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 )
@@ -75,6 +76,14 @@ func (h *TemplateColorTimeHandler) GetTemplateColorTime(c *gin.Context) {
 		return
 	}
 
+	languageIDStr := c.Query("language_id")
+	var languageID *int
+	if languageIDStr != "" {
+		if parsedLanguageID, err := strconv.Atoi(languageIDStr); err == nil {
+			languageID = &parsedLanguageID
+		}
+	}
+
 	userID, exists := c.Get(constants.UserID)
 	if !exists {
 		helper.SendError(c, http.StatusUnauthorized, errors.New("user ID not found in context"), nil)
@@ -94,7 +103,7 @@ func (h *TemplateColorTimeHandler) GetTemplateColorTime(c *gin.Context) {
 
 	ctx := context.WithValue(c, constants.TokenKey, token)
 
-	templateColorTime, err := h.TemplateColorTimeService.GetTemplateColorTime(ctx, orgID, termID, date)
+	templateColorTime, err := h.TemplateColorTimeService.GetTemplateColorTime(ctx, orgID, termID, date, languageID)
 	if err != nil {
 		helper.SendError(c, http.StatusInternalServerError, err, nil)
 		return
@@ -220,6 +229,42 @@ func (h *TemplateColorTimeHandler) UpdateTemplateColorTimeSlot(c *gin.Context) {
 	helper.SendSuccess(c, http.StatusOK, "template color time slot updated successfully", nil)
 }
 
+func (h *TemplateColorTimeHandler) DeleteTemplateColorTimeBlock(c *gin.Context) {
+	templateColorTimeID := c.Param("id")
+	if templateColorTimeID == "" {
+		helper.SendError(c, http.StatusBadRequest, errors.New("template color time id is required"), nil)
+		return
+	}
+
+	blockID := c.Param("block_id")
+	if blockID == "" {
+		helper.SendError(c, http.StatusBadRequest, errors.New("block id is required"), nil)
+		return
+	}
+
+	userID, exists := c.Get(constants.UserID)
+	if !exists {
+		helper.SendError(c, http.StatusUnauthorized, errors.New("user ID not found in context"), nil)
+		return
+	}
+
+	token, exists := c.Get(constants.Token)
+	if !exists {
+		helper.SendError(c, 400, fmt.Errorf("token not found"), nil)
+		return
+	}
+
+	ctx := context.WithValue(c, constants.TokenKey, token)
+
+	err := h.TemplateColorTimeService.DeleteTemplateColorTimeBlock(ctx, templateColorTimeID, blockID, userID.(string))
+	if err != nil {
+		helper.SendError(c, http.StatusInternalServerError, err, nil)
+		return
+	}
+
+	helper.SendSuccess(c, http.StatusOK, "template color time block deleted successfully", nil)
+}
+
 func (h *TemplateColorTimeHandler) DeleteTemplateColorTimeSlot(c *gin.Context) {
 	templateColorTimeID := c.Param("id")
 	if templateColorTimeID == "" {
@@ -232,14 +277,13 @@ func (h *TemplateColorTimeHandler) DeleteTemplateColorTimeSlot(c *gin.Context) {
 		helper.SendError(c, http.StatusBadRequest, errors.New("slot id is required"), nil)
 		return
 	}
-	
+
 	userID, exists := c.Get(constants.UserID)
 	if !exists {
 		helper.SendError(c, http.StatusUnauthorized, errors.New("user ID not found in context"), nil)
 		return
 	}
-	
-	
+
 	token, exists := c.Get(constants.Token)
 	if !exists {
 		helper.SendError(c, 400, fmt.Errorf("token not found"), nil)
