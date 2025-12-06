@@ -18,7 +18,7 @@ import (
 
 type ColorTimeService interface {
 	AddTopicToColorTimeWeek(ctx context.Context, id string, req *AddTopicToColorTimeWeekRequest, userID string) error
-	GetColorTimeWeek(ctx context.Context, userID, role, orgID, start, end string) (*TopicToColorTimeWeekResponse, error)
+	GetColorTimeWeek(ctx context.Context, userID, role, orgID, start, end string, languageID *int) (*TopicToColorTimeWeekResponse, error)
 	DeleteTopicToColorTimeWeek(ctx context.Context, id string) error
 	AddTopicToColorTimeDay(ctx context.Context, id string, req *AddTopicToColorTimeDayRequest) error
 	DeleteTopicToColorTimeDay(ctx context.Context, id string, req *DeleteTopicToColorTimeDayRequest) error
@@ -91,7 +91,7 @@ func (s *colorTimeService) AddTopicToColorTimeWeek(ctx context.Context, id strin
 
 }
 
-func (s *colorTimeService) GetColorTimeWeek(ctx context.Context, userID, role, orgID, start, end string) (*TopicToColorTimeWeekResponse, error) {
+func (s *colorTimeService) GetColorTimeWeek(ctx context.Context, userID, role, orgID, start, end string, languageID *int) (*TopicToColorTimeWeekResponse, error) {
 
 	if userID == "" {
 		return nil, errors.New("user id is required")
@@ -235,7 +235,7 @@ func (s *colorTimeService) GetColorTimeWeek(ctx context.Context, userID, role, o
 			}
 		}
 
-		blockResponses, err := s.convertBlocksWithProductInfo(ctx, day.TimeSlots, day.Date)
+		blockResponses, err := s.convertBlocksWithProductInfo(ctx, day.TimeSlots, day.Date, languageID)
 		if err != nil {
 			return nil, fmt.Errorf("failed to convert blocks for day %v: %w", day.Date, err)
 		}
@@ -504,7 +504,7 @@ func (s *colorTimeService) GetColorTimeDay(ctx context.Context, orgID, date, use
 		return nil, fmt.Errorf("failed to get week range: %w", err)
 	}
 
-	_, err = s.GetColorTimeWeek(ctx, userID, role, orgID, start, end)
+	_, err = s.GetColorTimeWeek(ctx, userID, role, orgID, start, end, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -566,7 +566,7 @@ func (s *colorTimeService) GetColorTimeDay(ctx context.Context, orgID, date, use
 				}
 			}
 
-			blockResponses, err := s.convertBlocksWithProductInfo(ctx, day.TimeSlots, day.Date)
+			blockResponses, err := s.convertBlocksWithProductInfo(ctx, day.TimeSlots, day.Date, nil)
 			if err != nil {
 				return nil, fmt.Errorf("failed to convert blocks for day %v: %w", day.Date, err)
 			}
@@ -665,21 +665,29 @@ func cloneDefaultDayColorTimesToColorTimes(defaultDayColorTimes []*default_color
 			colorSlots := make([]*ColortimeSlot, 0, len(defaultBlock.Slots))
 
 			for _, defaultSlot := range defaultBlock.Slots {
+				var colorTimeSlotLanguage []*ColorTimeSlotLanguage
+				for _, defaultSlotLanguage := range defaultSlot.ColorTimeSlotLanguage {
+					colorTimeSlotLanguage = append(colorTimeSlotLanguage, &ColorTimeSlotLanguage{
+						LanguageID: defaultSlotLanguage.LanguageID,
+						Title:      defaultSlotLanguage.Title,
+					})
+				}
 				colorSlot := &ColortimeSlot{
-					SlotID:    primitive.NewObjectID(),
-					SlotIDOld: &defaultSlot.SlotID,
-					Sessions:  defaultSlot.Sessions,
-					Title:     defaultSlot.Title,
-					Tracking:  "",
-					UseCount:  0,
-					StartTime: defaultSlot.StartTime,
-					EndTime:   defaultSlot.EndTime,
-					Duration:  defaultSlot.Duration,
-					Color:     defaultSlot.Color,
-					Note:      defaultSlot.Note,
-					ProductID: nil,
-					CreatedAt: time.Now(),
-					UpdatedAt: time.Now(),
+					SlotID:                primitive.NewObjectID(),
+					SlotIDOld:             &defaultSlot.SlotID,
+					Sessions:              defaultSlot.Sessions,
+					Title:                 defaultSlot.Title,
+					ColorTimeSlotLanguage: colorTimeSlotLanguage,
+					Tracking:              "",
+					UseCount:              0,
+					StartTime:             defaultSlot.StartTime,
+					EndTime:               defaultSlot.EndTime,
+					Duration:              defaultSlot.Duration,
+					Color:                 defaultSlot.Color,
+					Note:                  defaultSlot.Note,
+					ProductID:             nil,
+					CreatedAt:             time.Now(),
+					UpdatedAt:             time.Now(),
 				}
 				colorSlots = append(colorSlots, colorSlot)
 			}
@@ -733,7 +741,7 @@ func (s *colorTimeService) normalizeTrackingGlobal(ctx context.Context, organiza
 
 }
 
-func (s *colorTimeService) convertBlocksWithProductInfo(ctx context.Context, blocks []*ColorBlock, currentDate time.Time) ([]*BlockResponse, error) {
+func (s *colorTimeService) convertBlocksWithProductInfo(ctx context.Context, blocks []*ColorBlock, currentDate time.Time, languageID *int) ([]*BlockResponse, error) {
 	blockResponses := make([]*BlockResponse, 0, len(blocks))
 
 	for _, block := range blocks {
@@ -763,21 +771,29 @@ func (s *colorTimeService) convertBlocksWithProductInfo(ctx context.Context, blo
 				slot.EndTime.Location(),
 			)
 
+			var colorTimeSlotLanguage []*ColorTimeSlotLanguage
+			for _, slotLanguage := range slot.ColorTimeSlotLanguage {
+				if languageID == nil || slotLanguage.LanguageID == *languageID {
+					colorTimeSlotLanguage = append(colorTimeSlotLanguage, slotLanguage)
+				}
+			}
+
 			slotResponse := &SlotResponse{
-				SlotID:    slot.SlotID,
-				SlotIDOld: *slot.SlotIDOld,
-				Sessions:  slot.Sessions,
-				Title:     slot.Title,
-				Tracking:  slot.Tracking,
-				UseCount:  slot.UseCount,
-				StartTime: startDateTime,
-				EndTime:   endDateTime,
-				Duration:  slot.Duration,
-				Color:     slot.Color,
-				Note:      slot.Note,
-				ProductID: slot.ProductID,
-				CreatedAt: slot.CreatedAt,
-				UpdatedAt: slot.UpdatedAt,
+				SlotID:                slot.SlotID,
+				SlotIDOld:             *slot.SlotIDOld,
+				Sessions:              slot.Sessions,
+				Title:                 slot.Title,
+				ColorTimeSlotLanguage: colorTimeSlotLanguage,
+				Tracking:              slot.Tracking,
+				UseCount:              slot.UseCount,
+				StartTime:             startDateTime,
+				EndTime:               endDateTime,
+				Duration:              slot.Duration,
+				Color:                 slot.Color,
+				Note:                  slot.Note,
+				ProductID:             slot.ProductID,
+				CreatedAt:             slot.CreatedAt,
+				UpdatedAt:             slot.UpdatedAt,
 			}
 
 			if slot.ProductID != nil && *slot.ProductID != "" {

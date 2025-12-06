@@ -17,5 +17,7 @@ func RegisterRoutes(r *gin.Engine, defaultColorTimeHandler *DefaultColorTimeHand
 
 		defaultColorTime.GET("/day/:id/block/:slot_id", defaultColorTimeHandler.GetBlockBySlotID)
 		defaultColorTime.PUT("/day/:id/slot/edit/:slot_id", defaultColorTimeHandler.UpdateDefaultColorSlot)
+		defaultColorTime.DELETE("/day/:id/delete-slot/:slot_id", defaultColorTimeHandler.DeleteDefaultDayColorTimeSlot)
+		defaultColorTime.DELETE("/day/:id/delete-block/:block_id", defaultColorTimeHandler.DeleteDefaultDayColorTimeBlock)
 	}
 }

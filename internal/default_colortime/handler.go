@@ -251,3 +251,75 @@ func (h *DefaultColorTimeHandler) UpdateDefaultColorSlot(c *gin.Context) {
 
 	helper.SendSuccess(c, http.StatusOK, "slot updated successfully", nil)
 }
+
+func (h *DefaultColorTimeHandler) DeleteDefaultDayColorTimeSlot(c *gin.Context) {
+	dayID := c.Param("id")
+	if dayID == "" {
+		helper.SendError(c, http.StatusBadRequest, errors.New("day id is required"), nil)
+		return
+	}
+
+	slotID := c.Param("slot_id")
+	if slotID == "" {
+		helper.SendError(c, http.StatusBadRequest, errors.New("slot id is required"), nil)
+		return
+	}
+
+	userID, exists := c.Get(constants.UserID)
+	if !exists {
+		helper.SendError(c, http.StatusUnauthorized, errors.New("user ID not found in context"), nil)
+		return
+	}
+
+	token, exists := c.Get(constants.Token)
+	if !exists {
+		helper.SendError(c, 400, fmt.Errorf("token not found"), nil)
+		return
+	}
+
+	ctx := context.WithValue(c, constants.TokenKey, token)
+
+	err := h.DefaultColorTimeService.DeleteDefaultDayColorTimeSlot(ctx, dayID, slotID, userID.(string))
+	if err != nil {
+		helper.SendError(c, http.StatusInternalServerError, err, nil)
+		return
+	}
+
+	helper.SendSuccess(c, http.StatusOK, "slot deleted successfully", nil)
+}
+
+func (h *DefaultColorTimeHandler) DeleteDefaultDayColorTimeBlock(c *gin.Context) {
+	dayID := c.Param("id")
+	if dayID == "" {
+		helper.SendError(c, http.StatusBadRequest, errors.New("day id is required"), nil)
+		return
+	}
+
+	blockID := c.Param("block_id")
+	if blockID == "" {
+		helper.SendError(c, http.StatusBadRequest, errors.New("block id is required"), nil)
+		return
+	}
+
+	userID, exists := c.Get(constants.UserID)
+	if !exists {
+		helper.SendError(c, http.StatusUnauthorized, errors.New("user ID not found in context"), nil)
+		return
+	}
+
+	token, exists := c.Get(constants.Token)
+	if !exists {
+		helper.SendError(c, 400, fmt.Errorf("token not found"), nil)
+		return
+	}
+
+	ctx := context.WithValue(c, constants.TokenKey, token)
+
+	err := h.DefaultColorTimeService.DeleteDefaultDayColorTimeBlock(ctx, dayID, blockID, userID.(string))
+	if err != nil {
+		helper.SendError(c, http.StatusInternalServerError, err, nil)
+		return
+	}
+
+	helper.SendSuccess(c, http.StatusOK, "block deleted successfully", nil)
+}	

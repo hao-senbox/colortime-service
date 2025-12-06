@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 )
@@ -92,6 +93,14 @@ func (h *ColorTimeHandler) GetToColorTimeWeek(c *gin.Context) {
 		return
 	}
 
+	languageIDStr := c.Query("language_id")
+	var languageID *int
+	if languageIDStr != "" {
+		if parsedLanguageID, err := strconv.Atoi(languageIDStr); err == nil {
+			languageID = &parsedLanguageID
+		}
+	}
+
 	token, exists := c.Get(constants.Token)
 	if !exists {
 		helper.SendError(c, 400, fmt.Errorf("token not found"), nil)
@@ -100,7 +109,7 @@ func (h *ColorTimeHandler) GetToColorTimeWeek(c *gin.Context) {
 
 	ctx := context.WithValue(c, constants.TokenKey, token)
 
-	data, err := h.ColorTimeService.GetColorTimeWeek(ctx, userID, role, orgID, start, end)
+	data, err := h.ColorTimeService.GetColorTimeWeek(ctx, userID, role, orgID, start, end, languageID)
 
 	if err != nil {
 		helper.SendError(c, http.StatusBadRequest, err, nil)
@@ -213,13 +222,13 @@ func (h *ColorTimeHandler) UpdateColorSlotHandler(c *gin.Context) {
 		helper.SendError(c, http.StatusBadRequest, err, nil)
 		return
 	}
-	
+
 	userID, exists := c.Get(constants.UserID)
 	if !exists {
 		helper.SendError(c, http.StatusUnauthorized, errors.New("user ID not found in context"), nil)
 		return
 	}
-	
+
 	if userID == "" {
 		helper.SendError(c, http.StatusUnauthorized, errors.New("user ID not found in context"), nil)
 		return
@@ -240,7 +249,7 @@ func (h *ColorTimeHandler) UpdateColorSlotHandler(c *gin.Context) {
 	}
 
 	helper.SendSuccess(c, http.StatusOK, "color slot updated successfully", nil)
-	
+
 }
 
 func (h *ColorTimeHandler) GetColorTimeDay(c *gin.Context) {
@@ -267,7 +276,7 @@ func (h *ColorTimeHandler) GetColorTimeDay(c *gin.Context) {
 		helper.SendError(c, http.StatusBadRequest, errors.New("role is required"), nil)
 		return
 	}
-	
+
 	token, exists := c.Get(constants.Token)
 	if !exists {
 		helper.SendError(c, 400, fmt.Errorf("token not found"), nil)

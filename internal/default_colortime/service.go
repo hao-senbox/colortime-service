@@ -19,6 +19,8 @@ type DefaultColorTimeService interface {
 	GetBlockBySlotID(ctx context.Context, dayID, slotID string) (*BlockWithSlotResponse, error)
 	UpdateDefaultColorSlot(ctx context.Context, dayID, slotID string, req *UpdateDefaultColorSlotRequest) error
 	DeleteDefaultDayColorTime(ctx context.Context, id string) error
+	DeleteDefaultDayColorTimeSlot(ctx context.Context, dayID, slotID string, userID string) error
+	DeleteDefaultDayColorTimeBlock(ctx context.Context, dayID, blockID string, userID string) error
 }
 
 type defaultColorTimeService struct {
@@ -628,6 +630,105 @@ func (s *defaultColorTimeService) UpdateDefaultColorSlot(ctx context.Context, da
 
 	day.UpdatedAt = time.Now()
 	return s.DefaultColorTimeRepository.UpdateDefaultDayColorTime(ctx, dayObjectID, day)
+}
+
+func (s *defaultColorTimeService) DeleteDefaultDayColorTimeSlot(ctx context.Context, dayID, slotID string, userID string) error {
+	if dayID == "" {
+		return errors.New("day id is required")
+	}
+	if slotID == "" {
+		return errors.New("slot id is required")
+	}
+	if userID == "" {
+		return errors.New("user id is required")
+	}
+
+	dayObjectID, err := primitive.ObjectIDFromHex(dayID)
+	if err != nil {
+		return errors.New("invalid day id format")
+	}
+
+	slotObjectID, err := primitive.ObjectIDFromHex(slotID)
+	if err != nil {
+		return errors.New("invalid slot id format")
+	}
+
+	day, err := s.DefaultColorTimeRepository.GetDefaultDayColorTimeByID(ctx, dayObjectID)
+	if err != nil {
+		return fmt.Errorf("failed to get day: %w", err)
+	}
+
+	if day == nil {
+		return fmt.Errorf("day not found")
+	}
+
+	for _, block := range day.TimeSlots {
+		for i, slot := range block.Slots {
+			if slot.SlotID == slotObjectID {
+				block.Slots = append(block.Slots[:i], block.Slots[i+1:]...)
+				break
+			}
+		}
+	}
+
+	if err := s.DefaultColorTimeRepository.UpdateDefaultDayColorTime(ctx, dayObjectID, day); err != nil {
+		return fmt.Errorf("failed to update day: %w", err)
+	}
+
+	return nil
+}
+
+func (s *defaultColorTimeService) DeleteDefaultDayColorTimeBlock(ctx context.Context, dayID, blockID string, userID string) error {
+	if dayID == "" {
+		return errors.New("day id is required")
+	}
+
+	if blockID == "" {
+		return errors.New("block id is required")
+	}
+
+	if userID == "" {
+		return errors.New("user id is required")
+	}
+
+	dayObjectID, err := primitive.ObjectIDFromHex(dayID)
+	if err != nil {
+		return errors.New("invalid day id format")
+	}
+
+	blockObjectID, err := primitive.ObjectIDFromHex(blockID)
+	if err != nil {
+		return errors.New("invalid block id format")
+	}
+
+	day, err := s.DefaultColorTimeRepository.GetDefaultDayColorTimeByID(ctx, dayObjectID)
+	if err != nil {
+		return fmt.Errorf("failed to get day: %w", err)
+	}
+
+	if day == nil {
+		return fmt.Errorf("day not found")
+	}
+
+	var targetBlockIndex = -1
+	for i, block := range day.TimeSlots {
+		if block.BlockID == blockObjectID {
+			targetBlockIndex = i
+			break
+		}
+	}
+
+	if targetBlockIndex == -1 {
+		return errors.New("block not found")
+	}
+
+	day.TimeSlots = append(day.TimeSlots[:targetBlockIndex], day.TimeSlots[targetBlockIndex+1:]...)
+
+	if err := s.DefaultColorTimeRepository.UpdateDefaultDayColorTime(ctx, dayObjectID, day); err != nil {
+		return fmt.Errorf("failed to update day: %w", err)
+	}
+
+	return nil
 }
 
 func sameDay(a, b time.Time) bool {

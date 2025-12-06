@@ -48,21 +48,22 @@ type ProductInfo struct {
 }
 
 type SlotResponse struct {
-	SlotID    primitive.ObjectID `json:"slot_id"`
-	SlotIDOld primitive.ObjectID `json:"slot_id_old"`
-	Sessions  int                `json:"sessions"`
-	Title     string             `json:"title"`
-	Tracking  string             `json:"tracking"`
-	UseCount  int                `json:"use_count"`
-	StartTime time.Time          `json:"start_time"`
-	EndTime   time.Time          `json:"end_time"`
-	Duration  int                `json:"duration"`
-	Color     string             `json:"color"`
-	Note      string             `json:"note"`
-	ProductID *string            `json:"product_id"`
-	Product   *ProductInfo       `json:"product,omitempty"`
-	CreatedAt time.Time          `json:"created_at"`
-	UpdatedAt time.Time          `json:"updated_at"`
+	SlotID                primitive.ObjectID       `json:"slot_id"`
+	SlotIDOld             primitive.ObjectID       `json:"slot_id_old"`
+	Sessions              int                      `json:"sessions"`
+	Title                 string                   `json:"title"`
+	ColorTimeSlotLanguage []*ColorTimeSlotLanguage `json:"color_time_slot_language"`
+	Tracking              string                   `json:"tracking"`
+	UseCount              int                      `json:"use_count"`
+	StartTime             time.Time                `json:"start_time"`
+	EndTime               time.Time                `json:"end_time"`
+	Duration              int                      `json:"duration"`
+	Color                 string                   `json:"color"`
+	Note                  string                   `json:"note"`
+	ProductID             *string                  `json:"product_id"`
+	Product               *ProductInfo             `json:"product,omitempty"`
+	CreatedAt             time.Time                `json:"created_at"`
+	UpdatedAt             time.Time                `json:"updated_at"`
 }
 
 type BlockResponse struct {
